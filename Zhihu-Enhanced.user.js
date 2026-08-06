@@ -3,7 +3,7 @@
 // @name:zh-CN   知乎网页增强（Onlydreams 维护版）
 // @name:zh-TW   知乎網頁增強（Onlydreams 維護版）
 // @name:ru      Zhihu Web Enhancer (Onlydreams fork)
-// @version      2.3.33
+// @version      2.3.34
 // @author       X.I.U (original), Onlydreams (fork maintainer)
 // @description  Unofficial derivative of Zhihu enhancement, with keyword filtering for all Waiting for Answers categories.
 // @description:zh-CN  知乎增强非官方维护版：保留上游网页增强能力，并支持“等你来答”全部分类的关键词过滤。
@@ -24,7 +24,7 @@
 // @grant        window.onurlchange
 // @sandbox      JavaScript
 // @license      GPL-3.0 License
-// @run-at       document-end
+// @run-at       document-start
 // @namespace    https://github.com/Onlydreams/zhihu-web-enhancer
 // @supportURL   https://github.com/Onlydreams/zhihu-web-enhancer/issues
 // @homepageURL  https://github.com/Onlydreams/zhihu-web-enhancer
@@ -32,7 +32,7 @@
 
 // Derived from XIU2/UserScript Zhihu-Enhanced.user.js by X.I.U.
 // Upstream baseline: v2.3.32 @ 77b9f742b2c291b2908bd092a1805783e78747d7.
-// Modified by Onlydreams on 2026-08-06: added keyword filtering for all /question/waiting categories.
+// Modified by Onlydreams on 2026-08-06: added /question/waiting keyword filtering and pre-paint blocked-user hiding.
 
 'use strict';
 var menu_ALL = [
@@ -74,7 +74,59 @@ var menu_ALL = [
 for (let i=0;i<menu_ALL.length;i++){ // 如果读取到的值为 null 就写入默认值
     if (GM_getValue(menu_ALL[i][0]) == null){GM_setValue(menu_ALL[i][0], menu_ALL[i][3])};
 }
+installEarlyBlockedUserStyle(); // 在知乎首次绘制回答前隐藏已屏蔽用户，避免先显示再移除
 registerMenuCommand();
+
+
+// 转义 CSS 单引号字符串中的特殊字符
+function escapeCssAttributeValue(value) {
+    return String(value)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\0/g, '\\fffd ')
+        .replace(/\r/g, '\\d ')
+        .replace(/\n/g, '\\a ')
+        .replace(/\f/g, '\\c ');
+}
+
+
+// 根据现有用户黑名单生成首帧 CSS；原有 JavaScript 过滤继续作为兼容回退
+function buildEarlyBlockedUserCss(users) {
+    const selectors = [];
+    for (const user of users || []) {
+        const name = String(user || '').trim();
+        if (name === '') continue
+        const authorData = escapeCssAttributeValue(`authorName":"${name}",`);
+        const answer = `.ContentItem.AnswerItem[data-zop*='${authorData}']`;
+        selectors.push(`.List-item:has(${answer})`, `.Card.AnswerCard:has(${answer})`);
+    }
+    if (selectors.length === 0) return ''
+    return `${selectors.join(',\n')} {display: none !important;}`;
+}
+
+
+function installEarlyBlockedUserStyle() {
+    if (!GM_getValue('menu_blockUsers')) return
+    const css = buildEarlyBlockedUserCss(GM_getValue('menu_customBlockUsers') || []);
+    if (css === '') return
+
+    const style = document.createElement('style');
+    style.id = 'zhihuE_EarlyBlockedUsers';
+    style.textContent = css;
+
+    const appendStyle = function() {
+        const root = document.head || document.documentElement;
+        if (!root) return false
+        root.appendChild(style);
+        return true
+    }
+    if (appendStyle()) return
+
+    const observer = new MutationObserver(function() {
+        if (appendStyle()) observer.disconnect();
+    });
+    observer.observe(document, { childList: true, subtree: true });
+}
 
 // 注册脚本菜单
 function registerMenuCommand() {
@@ -104,7 +156,7 @@ function registerMenuCommand() {
             menu_ID[i] = GM_registerMenuCommand(`${menu_ALL[i][3]?'✅':'❌'} ${menu_ALL[i][1]}`, function(){menu_switch(`${menu_ALL[i][3]}`,`${menu_ALL[i][0]}`,`${menu_ALL[i][2]}`)});
         }
     }
-    menu_ID[menu_ID.length] = GM_registerMenuCommand('💬 反馈 & 建议', function () {window.GM_openInTab('https://github.com/XIU2/UserScript#xiu2userscript', {active: true,insert: true,setParent: true});window.GM_openInTab('https://greasyfork.org/zh-CN/scripts/419081/feedback', {active: true,insert: true,setParent: true});});
+    menu_ID[menu_ID.length] = GM_registerMenuCommand('💬 反馈 & 建议', function () {window.GM_openInTab('https://github.com/Onlydreams/zhihu-web-enhancer/issues', {active: true,insert: true,setParent: true});});
 }
 
 
@@ -876,6 +928,31 @@ function isWaitingQuestionView(pathname) {
     return pathname === '/question/waiting';
 }
 
+
+function findWaitingQuestionTitle(card) {
+    return Array.from(card.querySelectorAll('a[href*="/question/"]')).find(function(link) {
+        return /\/question\/\d+(?:$|[?#])/.test(link.href);
+    });
+}
+
+
+function filterWaitingQuestionCard(card, keywords, shouldFilter) {
+    const blockedMarker = 'zhihuEBlockedKeywordWaiting';
+    const title = findWaitingQuestionTitle(card);
+    const matchedKeyword = shouldFilter && title ? getMatchedBlockKeyword(title.textContent, keywords) : null;
+    if (matchedKeyword !== null) {
+        if (!card.dataset[blockedMarker]) console.log(`已屏蔽等你来答问题 [${matchedKeyword}]：${normalizeBlockKeywordText(title.textContent)}`);
+        card.dataset[blockedMarker] = 'true';
+        card.hidden = true;
+        card.style.display = 'none';
+    } else if (card.dataset[blockedMarker]) {
+        delete card.dataset[blockedMarker];
+        card.hidden = false;
+        card.style.removeProperty('display');
+    }
+    return matchedKeyword;
+}
+
 // 读取当前选中的文字，兼容输入框和普通页面选区
 function getSelectedBlockKeywordText() {
     let text = '';
@@ -1077,70 +1154,114 @@ function blockKeywords(type) {
 
 
     function blockKeywords_waiting() {
-        const blockedMarker = 'zhihuEBlockedKeywordWaiting';
         let questionsContainer = null;
+        let questionsRoot = null;
         let questionsObserver = null;
-        let connectRetryTimer = null;
+        let discoveryObserver = null;
 
-        function restoreQuestionCard(card) {
-            if (!card.dataset[blockedMarker]) return
-            delete card.dataset[blockedMarker];
-            card.hidden = false;
-            card.style.removeProperty('display');
+        function shouldFilterQuestions() {
+            return menu_value('menu_blockKeywords') && isWaitingQuestionView(location.pathname);
         }
 
-        function findQuestionTitle(card) {
-            return Array.from(card.querySelectorAll('a[href*="/question/"]')).find(function(link) {
-                return /\/question\/\d+(?:$|[?#])/.test(link.href);
-            });
+        function filterQuestionCard(card) {
+            filterWaitingQuestionCard(card, menu_value('menu_customBlockKeywords') || [], shouldFilterQuestions());
         }
 
         function filterQuestionCards(container) {
-            const shouldFilter = menu_value('menu_blockKeywords') && isWaitingQuestionView(location.pathname);
-            const keywords = menu_value('menu_customBlockKeywords') || [];
-
             Array.from(container.children).filter(function(card) {
                 return card.classList.contains('jsNavigable');
-            }).forEach(function(card) {
-                const title = findQuestionTitle(card);
-                const matchedKeyword = shouldFilter && title ? getMatchedBlockKeyword(title.textContent, keywords) : null;
-                if (matchedKeyword !== null) {
-                    if (!card.dataset[blockedMarker]) console.log(`已屏蔽等你来答问题 [${matchedKeyword}]：${normalizeBlockKeywordText(title.textContent)}`);
-                    card.dataset[blockedMarker] = 'true';
-                    card.hidden = true;
-                    card.style.display = 'none';
-                } else {
-                    restoreQuestionCard(card);
-                }
+            }).forEach(filterQuestionCard);
+        }
+
+        function collectAffectedCards(target, cards) {
+            if (target.nodeType !== 1 || !questionsContainer) return
+            const parentCard = target.closest('.jsNavigable');
+            if (parentCard && parentCard.parentElement === questionsContainer) cards.add(parentCard);
+            target.querySelectorAll('.jsNavigable').forEach(function(card) {
+                if (card.parentElement === questionsContainer) cards.add(card);
             });
         }
 
-        function connectQuestionsContainer(retryCount) {
-            clearTimeout(connectRetryTimer);
-            if (location.pathname !== '/question/waiting') {
-                if (questionsContainer) Array.from(questionsContainer.children).forEach(restoreQuestionCard);
+        function findQuestionsContainer(target) {
+            if (target.nodeType !== 1) return null
+            if (target.matches('.QuestionWaiting-questions[role="list"]')) return target
+            return target.querySelector('.QuestionWaiting-questions[role="list"]');
+        }
+
+        function handleQuestionsMutations(mutationsList) {
+            const affectedCards = new Set();
+            for (const mutation of mutationsList) {
+                for (const target of mutation.addedNodes) {
+                    const nextContainer = findQuestionsContainer(target);
+                    if (nextContainer && nextContainer !== questionsContainer) {
+                        connectQuestionsContainer(nextContainer);
+                        return
+                    }
+                    collectAffectedCards(target, affectedCards);
+                }
+            }
+            affectedCards.forEach(filterQuestionCard);
+        }
+
+        function disconnectQuestionsObservers() {
+            if (questionsObserver) questionsObserver.disconnect();
+            if (discoveryObserver) discoveryObserver.disconnect();
+            questionsObserver = null;
+            discoveryObserver = null;
+        }
+
+        function connectQuestionsContainer(nextContainer) {
+            if (!nextContainer || nextContainer === questionsContainer) return
+            if (discoveryObserver) discoveryObserver.disconnect();
+            discoveryObserver = null;
+
+            const nextRoot = nextContainer.closest('.QuestionWaiting') || nextContainer;
+            if (nextRoot !== questionsRoot) {
                 if (questionsObserver) questionsObserver.disconnect();
+                questionsRoot = nextRoot;
+                questionsObserver = new MutationObserver(handleQuestionsMutations);
+                questionsObserver.observe(questionsRoot, { childList: true, subtree: true });
+            }
+            questionsContainer = nextContainer;
+            filterQuestionCards(questionsContainer);
+        }
+
+        function discoverQuestionsContainer() {
+            if (location.pathname !== '/question/waiting') {
+                if (questionsContainer) filterQuestionCards(questionsContainer);
+                disconnectQuestionsObservers();
                 questionsContainer = null;
+                questionsRoot = null;
                 return
             }
 
             const nextContainer = document.querySelector('.QuestionWaiting-questions[role="list"]');
-            if (!nextContainer) {
-                if (retryCount < 10) connectRetryTimer = setTimeout(function(){connectQuestionsContainer(retryCount + 1)}, 200);
+            if (nextContainer) {
+                connectQuestionsContainer(nextContainer);
                 return
             }
 
-            if (nextContainer !== questionsContainer) {
-                if (questionsObserver) questionsObserver.disconnect();
-                questionsContainer = nextContainer;
-                questionsObserver = new MutationObserver(function(){connectQuestionsContainer(0)});
-                questionsObserver.observe(questionsContainer, { childList: true, subtree: true });
-            }
-            filterQuestionCards(questionsContainer);
+            disconnectQuestionsObservers();
+            questionsContainer = null;
+            questionsRoot = null;
+            const discoveryRoot = document.body || document.documentElement;
+            if (!discoveryRoot) return
+            discoveryObserver = new MutationObserver(function(mutationsList) {
+                for (const mutation of mutationsList) {
+                    for (const target of mutation.addedNodes) {
+                        const discoveredContainer = findQuestionsContainer(target);
+                        if (discoveredContainer) {
+                            connectQuestionsContainer(discoveredContainer);
+                            return
+                        }
+                    }
+                }
+            });
+            discoveryObserver.observe(discoveryRoot, { childList: true, subtree: true });
         }
 
-        connectQuestionsContainer(0);
-        window.addEventListener('urlchange', function(){connectQuestionsContainer(0)});
+        discoverQuestionsContainer();
+        window.addEventListener('urlchange', discoverQuestionsContainer);
     }
 
     function blockKeywords_1(item1, css) {
@@ -1752,14 +1873,29 @@ function switchHomeRecommend() {
     if (window.onurlchange === undefined) {addUrlChangeEvent();} // Tampermonkey v4.11 版本添加的 onurlchange 事件 grant，可以监控 pjax 等网页的 URL 变化
     rememberSelectedBlockKeyword(); // 记录当前选中的文字，供右键脚本菜单直接加入屏蔽词
 
-    removeLogin(); // 移除登录弹窗，Violentmonkey 不能延迟执行这个
-    cleanTitles(); // 净化标题消息，不能延迟执行
-    // Violentmonkey 比 Tampermonkey 加载更早，会导致一些元素还没加载，因此需要延迟一会儿
-    // Tampermonkey 4.18.0 版本可能需要延迟一会执行
-    if (GM_info.scriptHandler === 'Violentmonkey' || (GM_info.scriptHandler === 'Tampermonkey' && parseFloat(GM_info.version.slice(0,4)) >= 4.18)) {
-        setTimeout(start, 200);
+    // document-start 只负责首帧屏蔽；其余增强按原 document-end 的 DOM 就绪语义启动
+    if (document.readyState === 'loading') {
+        document.addEventListener('readystatechange', initializeWhenDocumentReady);
     } else {
-        start();
+        initializeAfterDomReady();
+    }
+
+    function initializeWhenDocumentReady() {
+        if (document.readyState === 'loading') return
+        document.removeEventListener('readystatechange', initializeWhenDocumentReady);
+        initializeAfterDomReady();
+    }
+
+    function initializeAfterDomReady() {
+        removeLogin(); // 移除登录弹窗
+        cleanTitles(); // 净化标题消息
+        // Violentmonkey 比 Tampermonkey 加载更早，会导致一些元素还没加载，因此需要延迟一会儿
+        // Tampermonkey 4.18.0 版本可能需要延迟一会执行
+        if (GM_info.scriptHandler === 'Violentmonkey' || (GM_info.scriptHandler === 'Tampermonkey' && parseFloat(GM_info.version.slice(0,4)) >= 4.18)) {
+            setTimeout(start, 200);
+        } else {
+            start();
+        }
     }
 
     function start(){
