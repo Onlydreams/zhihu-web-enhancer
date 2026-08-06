@@ -1,14 +1,14 @@
 // ==UserScript==
-// @name         Zhihu enhancement
-// @name:zh-CN   知乎增强
-// @name:zh-TW   知乎增強
-// @name:ru      Улучшение Zhihu
-// @version      2.3.32
-// @author       X.I.U
-// @description  A more personalized Zhihu experience~
-// @description:zh-CN  移除登录弹窗、屏蔽指定类别（视频、盐选、文章、想法、关注[赞同/关注了XX]等）、屏蔽低赞/低评、屏蔽用户、屏蔽关键词、默认收起回答、快捷收起回答/评论（左键两侧）、快捷回到顶部（右键两侧）、区分问题文章、移除高亮链接、净化搜索热门、净化标题消息、展开问题描述、显示问题作者、默认高清原图（无水印）、置顶显示时间、完整问题时间、直达问题按钮、默认站外直链...
-// @description:zh-TW  移除登錄彈窗、屏蔽指定類別（視頻、鹽選、文章、想法、關注[贊同/關注了XX]等）、屏蔽低贊/低評、屏蔽用戶、屏蔽關鍵詞、默認收起回答、快捷收起回答/評論、快捷回到頂部、區分問題文章、移除高亮鏈接、默認高清原圖（無水印）、默認站外直鏈...
-// @description:ru  Более персонализированный опыт пользования сайтом Zhihu~
+// @name         Zhihu Web Enhancer (Onlydreams fork)
+// @name:zh-CN   知乎网页增强（Onlydreams 维护版）
+// @name:zh-TW   知乎網頁增強（Onlydreams 維護版）
+// @name:ru      Zhihu Web Enhancer (Onlydreams fork)
+// @version      2.3.33
+// @author       X.I.U (original), Onlydreams (fork maintainer)
+// @description  Unofficial derivative of Zhihu enhancement, with keyword filtering for all Waiting for Answers categories.
+// @description:zh-CN  知乎增强非官方维护版：保留上游网页增强能力，并支持“等你来答”全部分类的关键词过滤。
+// @description:zh-TW  知乎增強非官方維護版：保留上游網頁增強能力，並支援「等你來答」全部分類的關鍵詞過濾。
+// @description:ru  Неофициальная производная версия Zhihu enhancement с фильтрацией ключевых слов во всех категориях вопросов.
 // @match        *://www.zhihu.com/*
 // @match        *://zhuanlan.zhihu.com/*
 // @exclude      https://www.zhihu.com/signin*
@@ -25,10 +25,14 @@
 // @sandbox      JavaScript
 // @license      GPL-3.0 License
 // @run-at       document-end
-// @namespace    https://greasyfork.org/scripts/4122051
-// @supportURL   https://github.com/XIU2/UserScript
-// @homepageURL  https://github.com/XIU2/UserScript
+// @namespace    https://github.com/Onlydreams/zhihu-web-enhancer
+// @supportURL   https://github.com/Onlydreams/zhihu-web-enhancer/issues
+// @homepageURL  https://github.com/Onlydreams/zhihu-web-enhancer
 // ==/UserScript==
+
+// Derived from XIU2/UserScript Zhihu-Enhanced.user.js by X.I.U.
+// Upstream baseline: v2.3.32 @ 77b9f742b2c291b2908bd092a1805783e78747d7.
+// Modified by Onlydreams on 2026-08-06: added keyword filtering for all /question/waiting categories.
 
 'use strict';
 var menu_ALL = [
@@ -857,6 +861,21 @@ function normalizeBlockKeywordText(text) {
     return (text || '').replace(/\s+/g, ' ').trim();
 }
 
+// 返回命中的屏蔽词；空白规范化与已支持的大小写不敏感语义保持一致
+function getMatchedBlockKeyword(text, keywords) {
+    const normalizedText = normalizeBlockKeywordText(text).toLowerCase();
+    for (const keyword of keywords || []) {
+        const normalizedKeyword = normalizeBlockKeywordText(keyword).toLowerCase();
+        if (normalizedKeyword !== '' && normalizedText.indexOf(normalizedKeyword) > -1) return keyword
+    }
+    return null
+}
+
+// “等你来答”的四个问题分类共用同一个页面路径和列表 Adapter
+function isWaitingQuestionView(pathname) {
+    return pathname === '/question/waiting';
+}
+
 // 读取当前选中的文字，兼容输入框和普通页面选区
 function getSelectedBlockKeywordText() {
     let text = '';
@@ -924,7 +943,8 @@ function customBlockKeywords() {
 // 屏蔽指定关键词
 function blockKeywords(type) {
     if (!menu_value('menu_blockKeywords')) return
-    if (!menu_value('menu_customBlockKeywords') || menu_value('menu_customBlockKeywords').length < 1) return
+    // “等你来答”需要持续监听，以便空词表编辑后对新加载内容生效
+    if (type !== 'waiting' && (!menu_value('menu_customBlockKeywords') || menu_value('menu_customBlockKeywords').length < 1)) return
     switch(type) {
         case 'index':
             blockKeywords_('.Card.TopstoryItem.TopstoryItem-isRecommend', 'Card TopstoryItem TopstoryItem-isRecommend');
@@ -947,6 +967,9 @@ function blockKeywords(type) {
         case 'comment':
             if (!menu_value('menu_blockKeywordsComment')) return // 如果 [屏蔽关键词 - 评论区] 未启用则跳过
             blockKeywords_comment();
+            break;
+        case 'waiting':
+            blockKeywords_waiting();
             break;
     }
 
@@ -1050,6 +1073,74 @@ function blockKeywords(type) {
         };
         const observer = new MutationObserver(callback);
         observer.observe(document, { childList: true, subtree: true });
+    }
+
+
+    function blockKeywords_waiting() {
+        const blockedMarker = 'zhihuEBlockedKeywordWaiting';
+        let questionsContainer = null;
+        let questionsObserver = null;
+        let connectRetryTimer = null;
+
+        function restoreQuestionCard(card) {
+            if (!card.dataset[blockedMarker]) return
+            delete card.dataset[blockedMarker];
+            card.hidden = false;
+            card.style.removeProperty('display');
+        }
+
+        function findQuestionTitle(card) {
+            return Array.from(card.querySelectorAll('a[href*="/question/"]')).find(function(link) {
+                return /\/question\/\d+(?:$|[?#])/.test(link.href);
+            });
+        }
+
+        function filterQuestionCards(container) {
+            const shouldFilter = menu_value('menu_blockKeywords') && isWaitingQuestionView(location.pathname);
+            const keywords = menu_value('menu_customBlockKeywords') || [];
+
+            Array.from(container.children).filter(function(card) {
+                return card.classList.contains('jsNavigable');
+            }).forEach(function(card) {
+                const title = findQuestionTitle(card);
+                const matchedKeyword = shouldFilter && title ? getMatchedBlockKeyword(title.textContent, keywords) : null;
+                if (matchedKeyword !== null) {
+                    if (!card.dataset[blockedMarker]) console.log(`已屏蔽等你来答问题 [${matchedKeyword}]：${normalizeBlockKeywordText(title.textContent)}`);
+                    card.dataset[blockedMarker] = 'true';
+                    card.hidden = true;
+                    card.style.display = 'none';
+                } else {
+                    restoreQuestionCard(card);
+                }
+            });
+        }
+
+        function connectQuestionsContainer(retryCount) {
+            clearTimeout(connectRetryTimer);
+            if (location.pathname !== '/question/waiting') {
+                if (questionsContainer) Array.from(questionsContainer.children).forEach(restoreQuestionCard);
+                if (questionsObserver) questionsObserver.disconnect();
+                questionsContainer = null;
+                return
+            }
+
+            const nextContainer = document.querySelector('.QuestionWaiting-questions[role="list"]');
+            if (!nextContainer) {
+                if (retryCount < 10) connectRetryTimer = setTimeout(function(){connectQuestionsContainer(retryCount + 1)}, 200);
+                return
+            }
+
+            if (nextContainer !== questionsContainer) {
+                if (questionsObserver) questionsObserver.disconnect();
+                questionsContainer = nextContainer;
+                questionsObserver = new MutationObserver(function(){connectQuestionsContainer(0)});
+                questionsObserver.observe(questionsContainer, { childList: true, subtree: true });
+            }
+            filterQuestionCards(questionsContainer);
+        }
+
+        connectQuestionsContainer(0);
+        window.addEventListener('urlchange', function(){connectQuestionsContainer(0)});
     }
 
     function blockKeywords_1(item1, css) {
@@ -1683,6 +1774,7 @@ function switchHomeRecommend() {
         }
         closeFloatingComments(); //                                            快捷关闭悬浮评论（监听点击事件，点击网页两侧空白处）
         blockKeywords('comment'); //                                           屏蔽指定关键词（评论）
+        blockKeywords('waiting'); //                                           屏蔽等你来答问题
 
 
         if (location.pathname.indexOf('question') > -1 && location.href.indexOf('/log') == -1) { //       回答页 //
