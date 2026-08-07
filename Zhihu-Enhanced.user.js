@@ -3,7 +3,7 @@
 // @name:zh-CN   知乎网页增强（Onlydreams 维护版）
 // @name:zh-TW   知乎網頁增強（Onlydreams 維護版）
 // @name:ru      Zhihu Web Enhancer (Onlydreams fork)
-// @version      2.3.34
+// @version      2.3.35
 // @author       X.I.U (original), Onlydreams (fork maintainer)
 // @description  Unofficial derivative of Zhihu enhancement, with keyword filtering for all Waiting for Answers categories.
 // @description:zh-CN  知乎增强非官方维护版：保留上游网页增强能力，并支持“等你来答”全部分类的关键词过滤。
@@ -276,6 +276,7 @@ function getCollapsedAnswerObserver() {
         observer.end = function() {
             if (this._active) {
                 this.disconnect();
+                this._active = false;
             }
         }
 
@@ -545,7 +546,7 @@ function blockLowCount(type) {
         const callback = (mutationsList, observer) => {
             for (const mutation of mutationsList) {
                 for (const target of mutation.addedNodes) {
-                    if (target.nodeType != 1) return
+                    if (target.nodeType != 1) continue
                     if (target.className === className2) {
                         blockLowCount_1(target,menuUpvote,'upvote_num');
                         blockLowCount_1(target,menuComment,'comment_num');
@@ -645,7 +646,7 @@ function blockUsers(type) {
         const callback = (mutationsList, observer) => {
             for (const mutation of mutationsList) {
                 for (const target of mutation.addedNodes) {
-                    if (target.nodeType != 1) return
+                    if (target.nodeType != 1) continue
                     if (target.className === className2) {
                         let item = target.querySelector('.ContentItem.AnswerItem, .ContentItem.ArticleItem'); // 用户名所在元素
                         if (item) {
@@ -670,7 +671,7 @@ function blockUsers(type) {
         const blockUsers_question_ = (mutationsList, observer) => {
             for (const mutation of mutationsList) {
                 for (const target of mutation.addedNodes) {
-                    if (target.nodeType != 1) return
+                    if (target.nodeType != 1) continue
                     if (target.className === 'List-item' || target.className === 'Card AnswerCard') {
                         let item1 = target.querySelector('.ContentItem.AnswerItem');
                         if (item1) {
@@ -689,7 +690,7 @@ function blockUsers(type) {
         const blockUsers_question_answer_ = (mutationsList, observer) => {
             for (const mutation of mutationsList) {
                 for (const target of mutation.addedNodes) {
-                    if (target.nodeType != 1) return
+                    if (target.nodeType != 1) continue
                     target.querySelectorAll('.List-item, .Card.AnswerCard').forEach(function(item){
                         let item1 = item.querySelector('.ContentItem.AnswerItem');
                         if (item1) {
@@ -753,7 +754,7 @@ function blockUsers(type) {
             if (location.search.indexOf('type=content') === -1) return // 目前只支持搜索页的 [综合]
             for (const mutation of mutationsList) {
                 for (const target of mutation.addedNodes) {
-                    if (target.nodeType != 1) return
+                    if (target.nodeType != 1) continue
                     let item = target.querySelector('.Card.SearchResult-Card[data-za-detail-view-path-module="AnswerItem"] .RichText.ztext.CopyrightRichText-richText b, .Card.SearchResult-Card[data-za-detail-view-path-module="PostItem"] .RichText.ztext.CopyrightRichText-richText b');
                     if (item) {
                         for (const keyword of menu_value('menu_customBlockUsers')) { // 遍历用户名黑名单
@@ -775,7 +776,7 @@ function blockUsers(type) {
         const callback = (mutationsList, observer) => {
             for (const mutation of mutationsList) {
                 for (const target of mutation.addedNodes) {
-                    if (target.nodeType != 1) return
+                    if (target.nodeType != 1) continue
                     //console.log(target)
                     if (target.tagName == 'DIV' && target.className.indexOf('css-') == 0 && target.dataset.id == undefined) {
                         let item = target.querySelector('a[href^="https://www.zhihu.com/people/"]>img.Avatar[alt][loading]')
@@ -813,7 +814,7 @@ function blockUsers(type) {
         const callback = (mutationsList, observer) => {
             for (const mutation of mutationsList) {
                 for (const target of mutation.addedNodes) {
-                    if (target.nodeType != 1) return
+                    if (target.nodeType != 1) continue
                     //console.log(target, target.className)
                     if (target.tagName == 'DIV' && target.className && (target.className.indexOf('css-') == 0 || target.style == 'opacity: 1;')) {
                         const item = target.querySelector('.MemberButtonGroup.ProfileButtonGroup.HoverCard-buttons'),
@@ -1070,7 +1071,7 @@ function blockKeywords(type) {
         const callback = (mutationsList, observer) => {
             for (const mutation of mutationsList) {
                 for (const target of mutation.addedNodes) {
-                    if (target.nodeType != 1) return
+                    if (target.nodeType != 1) continue
                     if (target.className === className2) {blockKeywords_1(target, 'h2.ContentItem-title meta[itemprop="name"], meta[itemprop="headline"]');}
                 }
             }
@@ -1095,7 +1096,7 @@ function blockKeywords(type) {
             if (location.search.indexOf('type=content') === -1) return // 目前只支持搜索页的 [综合]
             for (const mutation of mutationsList) {
                 for (const target of mutation.addedNodes) {
-                    if (target.nodeType != 1) return
+                    if (target.nodeType != 1) continue
                     //console.log(target)
                     if (target.tagName === 'DIV' && target.className === '') {
                         let tt = target.querySelector('div[class="Card SearchResult-Card"][data-za-detail-view-path-module="AnswerItem"], div[class="Card SearchResult-Card"][data-za-detail-view-path-module="PostItem"]')
@@ -1129,7 +1130,7 @@ function blockKeywords(type) {
         const callback = (mutationsList, observer) => {
             for (const mutation of mutationsList) {
                 for (const target of mutation.addedNodes) {
-                    if (target.nodeType != 1) return
+                    if (target.nodeType != 1) continue
                     //console.log(target);
                     if (target.tagName == 'DIV' && target.className.indexOf('css-') == 0 && target.dataset.id == undefined) {
                         let item = target.querySelector('a[href^="https://www.zhihu.com/people/"]>img.Avatar[alt][loading]')
@@ -1283,6 +1284,23 @@ function blockKeywords(type) {
 }
 
 
+// 有界等待首批元素；后续动态内容仍交给各功能现有的 MutationObserver
+function processElementsWhenAvailable(selector, processElements, intervalMs = 100, maxAttempts = 50) {
+    let attempts = 0;
+    const timer = setInterval(function() {
+        attempts += 1;
+        const elements = document.querySelectorAll(selector);
+        if (elements.length > 0) {
+            clearInterval(timer);
+            processElements(elements);
+        } else if (attempts >= maxAttempts) {
+            clearInterval(timer);
+        }
+    }, intervalMs);
+    return timer;
+}
+
+
 // 屏蔽指定类别（视频/文章等）
 function blockType(type) {
     let name;
@@ -1315,7 +1333,7 @@ function blockType(type) {
     const observer = new MutationObserver(mutationsList => {
         for (const mutation of mutationsList) {
             for (const target of mutation.addedNodes) {
-                if (target.nodeType != 1) return
+                if (target.nodeType != 1) continue
                 if (target.className === "Card SearchResult-Card" && target.dataset.zaDetailViewPathModule === undefined) {
                     // 移除相关搜索
                     if (menu_value('menu_blockTypeSearch') && location.pathname === '/search' && location.search.indexOf('type=content') > -1) target.hidden = true;
@@ -1374,13 +1392,7 @@ function blockType(type) {
     }
 
     function addSetInterval_(A) {
-        let timer = setInterval(function(){
-            let aTag = document.querySelectorAll(A);
-            if (aTag.length > 0) {
-                clearInterval(timer);
-                aTag.forEach(function(item){blockType_(item);})
-            }
-        });
+        processElementsWhenAvailable(A, function(aTag){aTag.forEach(function(item){blockType_(item);})});
     }
 }
 
@@ -1437,7 +1449,7 @@ function blockYanXuan() {
     const blockYanXuan_question = (mutationsList, observer) => {
         for (const mutation of mutationsList) {
             for (const target of mutation.addedNodes) {
-                if (target.nodeType != 1) return
+                if (target.nodeType != 1) continue
                 if (target.className === 'List-item' || target.className === 'Card AnswerCard') {
                     if (target.querySelector('.KfeCollection-AnswerTopCard-Container, .KfeCollection-PurchaseBtn')) {
                         target.hidden = true;
@@ -1450,7 +1462,7 @@ function blockYanXuan() {
     const blockYanXuan_question_answer = (mutationsList, observer) => {
         for (const mutation of mutationsList) {
             for (const target of mutation.addedNodes) {
-                if (target.nodeType != 1) return
+                if (target.nodeType != 1) continue
                 target.querySelectorAll('.List-item, .Card.AnswerCard').forEach(function(item){
                     if (item.querySelector('.KfeCollection-AnswerTopCard-Container, .KfeCollection-PurchaseBtn')) {
                         item.hidden = true;
@@ -1509,7 +1521,7 @@ function addToQuestion() {
     const observer = new MutationObserver(mutationsList => {
         for (const mutation of mutationsList) {
             for (const target of mutation.addedNodes) {
-                if (target.nodeType != 1) return
+                if (target.nodeType != 1) continue
                 addTypeTips_(target.querySelector('h2.ContentItem-title a:not(.zhihu_e_tips)'));
             }
         }
@@ -1534,13 +1546,7 @@ function addToQuestion() {
     }
 
     function addSetInterval_(A) {
-        let timer = setInterval(function(){
-            let aTag = document.querySelectorAll(A);
-            if (aTag.length > 0) {
-                clearInterval(timer);
-                aTag.forEach(function(item){addTypeTips_(item);})
-            }
-        });
+        processElementsWhenAvailable(A, function(aTag){aTag.forEach(function(item){addTypeTips_(item);})});
     }
 }
 
@@ -1557,7 +1563,7 @@ function removeLogin() {
     const removeLoginModal = (mutationsList, observer) => {
         for (const mutation of mutationsList) {
             for (const target of mutation.addedNodes) {
-                if (target.nodeType != 1) return
+                if (target.nodeType != 1) continue
                 if (target.querySelector('.signFlowModal')) {
                     let button = target.querySelector('.Button.Modal-closeButton.Button--plain');
                     if (button) button.click();
@@ -1638,7 +1644,7 @@ function closeFloatingComments() {
     const closeFloatingCommentsModal = (mutationsList, observer) => {
         for (const mutation of mutationsList) {
             for (const target of mutation.addedNodes) {
-                if (target.nodeType != 1) return
+                if (target.nodeType != 1) continue
                 let button = document.querySelector('button[aria-label="关闭"]');
                 if (button) {button.parentElement.parentElement.onclick = function(event){if (event.target.parentElement == this) {button.click();}}}
             }
@@ -1786,8 +1792,25 @@ function originalPic(){
 
 
 // 默认站外直链，修改自：https://greasyfork.org/scripts/402808（从 JQuery 改为原生 JavaScript，且精简、优化了代码）
+function getDirectExternalUrl(href) {
+    const marker = 'link.zhihu.com/?target=';
+    const markerIndex = href.indexOf(marker);
+    if (markerIndex === -1) return null
+    try {
+        const directUrl = new URL(decodeURIComponent(href.substring(markerIndex + marker.length)));
+        if (directUrl.protocol !== 'http:' && directUrl.protocol !== 'https:') return null
+        return directUrl.href;
+    } catch (error) {
+        return null
+    }
+}
+
+
 function directLink () {
-    document.querySelectorAll('a.external[href*="link.zhihu.com/?target="], a.LinkCard[href*="link.zhihu.com/?target="]:not(.MCNLinkCard):not(.ZVideoLinkCard):not(.ADLinkCardContainer)').forEach(function (_this) {_this.href = decodeURIComponent(_this.href.substring(_this.href.indexOf('link.zhihu.com/?target=') + 23));});
+    document.querySelectorAll('a.external[href*="link.zhihu.com/?target="], a.LinkCard[href*="link.zhihu.com/?target="]:not(.MCNLinkCard):not(.ZVideoLinkCard):not(.ADLinkCardContainer)').forEach(function (_this) {
+        const directUrl = getDirectExternalUrl(_this.href);
+        if (directUrl) _this.href = directUrl;
+    });
 }
 
 
