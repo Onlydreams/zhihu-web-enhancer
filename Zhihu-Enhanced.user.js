@@ -3,7 +3,7 @@
 // @name:zh-CN   知乎网页增强（Onlydreams 维护版）
 // @name:zh-TW   知乎網頁增強（Onlydreams 維護版）
 // @name:ru      Zhihu Web Enhancer (Onlydreams fork)
-// @version      2.3.35
+// @version      2.3.36
 // @author       X.I.U (original), Onlydreams (fork maintainer)
 // @description  Unofficial derivative of Zhihu enhancement, with keyword filtering for all Waiting for Answers categories.
 // @description:zh-CN  知乎增强非官方维护版：保留上游网页增强能力，并支持“等你来答”全部分类的关键词过滤。
@@ -1113,6 +1113,7 @@ function blockKeywords(type) {
     function blockKeywords_comment() {
         function filterComment(comment) {
             let content = comment.querySelector('.CommentContent'); // 寻找评论文字所在元素
+            if (!content || content.dataset.text !== undefined) return
             let text = content.textContent.toLowerCase(); // 全部转为小写（用来不区分大小写）
             content.querySelectorAll('img.sticker[alt]').forEach((img)=>{text += img.alt}) // 将评论中的表情添加到待遍历的评论文字中
 
@@ -1123,6 +1124,7 @@ function blockKeywords(type) {
                     content.dataset.text = content.innerHTML
                     content.onclick = (e)=>{if (e.target.dataset.text) {e.target.innerHTML = e.target.dataset.text;e.target.removeAttribute('data-text');}}
                     content.textContent = '[该评论已屏蔽，可点击显示]';
+                    break;
                 }
             }
         }
@@ -1425,13 +1427,16 @@ function findParentElement(item, className, type = false) {
 // 移除高亮链接
 function cleanHighlightLink() {
     if (!menu_value('menu_cleanHighlightLink')) return;
+    const selector = 'span > a[data-za-not-track-link][href^="https://zhida.zhihu.com/search?"]';
+    function cleanLink(link) {
+        if (link.parentElement) link.parentElement.replaceWith(link.textContent);
+    }
     const callback = (mutationsList, observer) => {
         for (const mutation of mutationsList) {
             for (const target of mutation.addedNodes) {
-                if (target.nodeType != 1 || target.tagName != 'A') break
-                if (target.dataset.zaNotTrackLink && target.href.indexOf('https://zhida.zhihu.com/search?') > -1) {
-                    target.parentElement.replaceWith(target.textContent);
-                }
+                if (target.nodeType != 1) continue
+                if (target.matches(selector)) cleanLink(target);
+                target.querySelectorAll(selector).forEach(cleanLink);
             }
         }
     };
@@ -1439,7 +1444,7 @@ function cleanHighlightLink() {
     observer.observe(document, { childList: true, subtree: true });
 
     // 针对的是打开网页后直接加载的前面几个回答（上面哪些是针对动态加载的回答）
-    document.querySelectorAll('span > a[data-za-not-track-link][href^="https://zhida.zhihu.com/search?"]').forEach(e => e.parentElement.replaceWith(e.textContent))
+    document.querySelectorAll(selector).forEach(cleanLink);
 }
 
 
@@ -1647,6 +1652,7 @@ function closeFloatingComments() {
                 if (target.nodeType != 1) continue
                 let button = document.querySelector('button[aria-label="关闭"]');
                 if (button) {button.parentElement.parentElement.onclick = function(event){if (event.target.parentElement == this) {button.click();}}}
+                return // 同一批次共用当前弹层，避免每个新增元素都全页查询
             }
         }
     };
@@ -1816,21 +1822,36 @@ function directLink () {
 
 // 默认折叠邀请，修改自：https://greasyfork.org/scripts/402808（从 JQuery 改为原生 JavaScript，且精简、优化了代码）
 function questionInvitation(){
-    let time = setInterval(function(){
-        let q = document.querySelector('.QuestionInvitation-content'); if (!q) return
+    if (!/^\/question\/\d+(?:\/answer\/\d+)?\/?$/.test(location.pathname)) return
+    let attempts = 0;
+    // 邀请区可能不存在；限时等待并在路由变化时清理，避免旧页面任务常驻。
+    function stopWaiting() {
         clearInterval(time);
+        window.removeEventListener('urlchange', stopWaiting);
+    }
+    const time = setInterval(function(){
+        attempts += 1;
+        const q = document.querySelector('.QuestionInvitation-content');
+        const title = document.querySelector('.QuestionInvitation-title');
+        const topbar = document.querySelector('.Topbar');
+        if (!q || !title || !topbar) {
+            if (attempts >= 50) stopWaiting();
+            return
+        }
+        stopWaiting();
         q.style.display = 'none';
-        document.querySelector('.QuestionInvitation-title').innerHTML = document.querySelector('.QuestionInvitation-title').innerText + '<span style="cursor: pointer; font-size: 14px; color: #919aae;"> 展开/折叠</span>'
+        title.textContent = title.innerText;
+        title.insertAdjacentHTML('beforeend', '<span style="cursor: pointer; font-size: 14px; color: #919aae;"> 展开/折叠</span>');
         // 点击事件（展开/折叠）
-        document.querySelector('.Topbar').onclick = function(){
-            let q = document.querySelector('.QuestionInvitation-content')
+        topbar.onclick = function(){
             if (q.style.display == 'none') {
                 q.style.display = ''
             } else {
                 q.style.display = 'none'
             }
         }
-    });
+    }, 100);
+    window.addEventListener('urlchange', stopWaiting);
 }
 
 // 屏蔽热榜杂项
@@ -1868,8 +1889,10 @@ function blockHotOther() {
     const blockLive_content = (mutationsList, observer) => {
         for (const mutation of mutationsList) {
             for (const target of mutation.addedNodes) {
-                if (target.classList.contains('.HotItem')) {
+                if (target.nodeType != 1) continue
+                if (target.classList.contains('HotItem') || target.querySelector('.HotItem')) {
                     block();
+                    return // block 已处理当前整个榜单，每批只需执行一次
                 }
             }
         }
