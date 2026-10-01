@@ -1,0 +1,75 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const { element, loadUserscript } = require('../test-support/userscript-harness');
+const { waitingTree } = require('../test-support/waiting-question-fixture');
+
+test('动态热榜自身和包装卡片使用当前关键词过滤', () => {
+    const initial = element('section'); initial.className = 'HotItem';
+    initial.appendChild(element('h2', ['h2.HotItem-title'])).textContent = 'alpha 初始';
+    const cards = [initial];
+    const harness = loadUserscript({ settings: { menu_customBlockKeywords: ['alpha'] }, location: { pathname: '/hot' }, document: { querySelectorAll: selector => selector === '.HotItem' ? cards : [] } });
+    harness.context.blockKeywords('index');
+    assert.equal(initial.hidden, true);
+    const later = element('section', ['.HotItem']); later.className = 'HotItem';
+    later.appendChild(element('h2', ['h2.HotItem-title'])).textContent = 'alpha 动态';
+    const unrelated = element('section', ['.HotItem']);
+    unrelated.appendChild(element('h2', ['h2.HotItem-title'])).textContent = '普通标题';
+    unrelated.appendChild(element('span')).textContent = 'alpha 状态文字';
+    const wrapper = element(); wrapper.appendChild(later); wrapper.appendChild(unrelated);
+    const observer = harness.state.observers.at(-1);
+    observer.callback([{ addedNodes: [{ nodeType: 3 }, later, wrapper] }]);
+    assert.equal(later.hidden, true);
+    assert.equal(unrelated.hidden, false);
+});
+
+test('空词表启动的标题与评论监听在添加首词后过滤新内容', () => {
+    const harness = loadUserscript();
+    harness.context.blockKeywords('index');
+    harness.context.blockKeywords('comment');
+    const observers = harness.state.observers.filter(observer => observer.active);
+    assert.equal(observers.length, 2);
+    harness.context.getSelectedBlockKeywordText = () => 'alpha';
+    harness.context.addSelectedKeywordToBlocklist();
+    const card = element('div', ['.Card.TopstoryItem.TopstoryItem-isRecommend']); card.className = 'Card TopstoryItem TopstoryItem-isRecommend';
+    card.appendChild(element('meta', ['h2.ContentItem-title meta[itemprop="name"], meta[itemprop="headline"]'])).content = 'alpha 标题';
+    observers[0].callback([{ addedNodes: [card] }]);
+    assert.equal(card.hidden, true);
+    const content = element(); content.textContent = 'alpha 评论';
+    const comment = element(); comment.querySelector = selector => { assert.equal(selector, '.CommentContent'); return content; };
+    const avatar = { parentElement: { parentElement: { parentElement: { parentElement: comment } } } };
+    const wrapper = element(); wrapper.className = 'css-test'; wrapper.querySelector = selector => { assert.equal(selector, 'a[href^="https://www.zhihu.com/people/"]>img.Avatar[alt][loading]'); return avatar; };
+    observers[1].callback([{ addedNodes: [wrapper] }]);
+    assert.equal(content.textContent, '[该评论已屏蔽，可点击显示]');
+});
+
+test('首页、waiting 和评论均保留空白字面语义，添加选区不改写旧词表', () => {
+    const harness = loadUserscript({ settings: { menu_customBlockKeywords: ['牢   A'] } });
+    harness.context.getSelectedBlockKeywordText = () => 'beta';
+    harness.context.addSelectedKeywordToBlocklist();
+    assert.deepEqual(harness.state.settings.get('menu_customBlockKeywords'), ['牢   A', 'beta']);
+    assert.equal(harness.context.getMatchedBlockKeyword('牢 A', ['牢   A']), null);
+    const tree = waitingTree('牢 A');
+    harness.context.filterWaitingQuestionCard(tree.card, ['牢   A'], true);
+    assert.equal(tree.card.hidden, false);
+    harness.context.blockKeywords('index');
+    const titleObserver = harness.state.observers.at(-1);
+    const card = element('div', ['.Card.TopstoryItem.TopstoryItem-isRecommend']);
+    const title = card.appendChild(element('meta', ['h2.ContentItem-title meta[itemprop="name"], meta[itemprop="headline"]']));
+    title.content = '牢 A';
+    titleObserver.callback([{ addedNodes: [card] }]);
+    assert.equal(card.hidden, false);
+    harness.context.blockKeywords('comment');
+    const content = element(); content.textContent = '牢 A';
+    const comment = element(); comment.querySelector = selector => { assert.equal(selector, '.CommentContent'); return content; };
+    const avatar = { parentElement: { parentElement: { parentElement: { parentElement: comment } } } };
+    const wrapper = element(); wrapper.className = 'css-test'; wrapper.querySelector = selector => { assert.equal(selector, 'a[href^="https://www.zhihu.com/people/"]>img.Avatar[alt][loading]'); return avatar; };
+    harness.state.observers.at(-1).callback([{ addedNodes: [wrapper] }]);
+    assert.equal(content.textContent, '牢 A');
+    content.textContent = '牢   A';
+    harness.state.observers.at(-1).callback([{ addedNodes: [wrapper] }]);
+    assert.equal(content.textContent, '[该评论已屏蔽，可点击显示]');
+    harness.setMenu('menu_blockKeywords', false);
+    title.content = 'beta';
+    titleObserver.callback([{ addedNodes: [card] }]);
+    assert.equal(card.hidden, false);
+});

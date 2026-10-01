@@ -3,7 +3,7 @@
 // @name:zh-CN   知乎网页增强（Onlydreams 维护版）
 // @name:zh-TW   知乎網頁增強（Onlydreams 維護版）
 // @name:ru      Zhihu Web Enhancer (Onlydreams fork)
-// @version      2.3.38
+// @version      2.3.39
 // @author       X.I.U (original), Onlydreams (fork maintainer)
 // @description  Unofficial derivative of Zhihu enhancement, with keyword filtering for all Waiting for Answers categories.
 // @description:zh-CN  知乎增强非官方维护版：保留上游网页增强能力，并支持“等你来答”全部分类的关键词过滤。
@@ -307,7 +307,7 @@ function collapsedAnswer() {
     //console.log('1111', document.querySelector('.CornerAnimayedFlex'))
     if (document.querySelector('.CornerAnimayedFlex>button') && !document.getElementById('collapsed-button')) {
         // 向网页中插入收起全部回答按钮+样式+绑定点击事件
-        document.head.appendChild(document.createElement('style')).textContent = '.CornerButton{margin-bottom:8px !important;}.CornerButtons{bottom:25px !important;} .CornerAnimayedFlex {height: auto;}';
+        appendStyle('.CornerButton{margin-bottom:8px !important;}.CornerButtons{bottom:25px !important;} .CornerAnimayedFlex {height: auto;}', document.head);
         document.querySelector('.CornerAnimayedFlex').insertAdjacentHTML('afterBegin', '<button id="collapsed-button" data-tooltip="收起全部回答/评论" data-tooltip-position="left" data-tooltip-will-hide-on-click="false" aria-label="收起全部回答/评论" type="button" class="' + document.querySelector('.CornerAnimayedFlex>button').className + '"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" color="var(--MapText02A)" class="Zi Zi--ArrowUpward" fill="currentColor" style="-webkit-transform: rotate(180deg);transform: rotate(180deg);"><path d="M4.336 10.07a.875.875 0 0 1 .094-1.234l7-6 .003-.002a.87.87 0 0 1 .12-.085l.01-.007a.873.873 0 0 1 .131-.061l.012-.004a.874.874 0 0 1 .586 0l.011.004a.872.872 0 0 1 .262.153l.004.002 7 6a.875.875 0 0 1-1.139 1.328l-5.555-4.761V20.5a.875.875 0 0 1-1.75 0V5.403l-5.556 4.761a.875.875 0 0 1-1.233-.095Z"></path></svg></button>');
         document.getElementById('collapsed-button').onclick = function () {
 
@@ -616,7 +616,7 @@ function blockUsers(type) {
             blockUsers_('.List-item.TopicFeedItem', 'List-item TopicFeedItem');
             break;
         case 'people':
-            runFeature('用户主页屏蔽按钮', blockUsers_button_people); // 添加屏蔽用户按钮（用户主页）
+            runFeature('blockUsers_button_people', blockUsers_button_people); // 添加屏蔽用户按钮（用户主页）
             break;
     }
     blockUsers_comment(); //       评论区
@@ -1370,7 +1370,7 @@ function blockType(type) {
         addSetInterval_(name);
     } else if (type === 'question') { // 问题页
         if (!menu_value('menu_blockTypeVideo')) return
-        document.documentElement.appendChild(document.createElement('style')).textContent = `.VideoAnswerPlayer, .VideoAnswerPlayer video, .VideoAnswerPlayer-video, .VideoAnswerPlayer-iframe {display: none !important;}`;
+        appendStyle(`.VideoAnswerPlayer, .VideoAnswerPlayer video, .VideoAnswerPlayer-video, .VideoAnswerPlayer-iframe {display: none !important;}`);
         name = '.VideoAnswerPlayer'
         document.querySelectorAll(name).forEach(function(item){blockType_(item);})
     } else if (type === 'follow') { // 首页 - 关注
@@ -1381,7 +1381,7 @@ function blockType(type) {
         document.querySelectorAll(name).forEach(function(item){blockType_(item);})
     } else { // 首页
         if (!menu_value('menu_blockTypeVideo') && !menu_value('menu_blockTypeArticle') && !menu_value('menu_blockTypePin')) return
-        if (menu_value('menu_blockTypeVideo')) document.documentElement.appendChild(document.createElement('style')).textContent = `.Card .ZVideoItem-video, .VideoAnswerPlayer video, nav.TopstoryTabs > a[aria-controls="Topstory-zvideo"] {display: none !important;}`;
+        if (menu_value('menu_blockTypeVideo')) appendStyle(`.Card .ZVideoItem-video, .VideoAnswerPlayer video, nav.TopstoryTabs > a[aria-controls="Topstory-zvideo"] {display: none !important;}`);
         name = 'h2.ContentItem-title a:not(.zhihu_e_toQuestion)'
         if (menu_value('menu_blockTypePin')) name = 'h2.ContentItem-title a:not(.zhihu_e_toQuestion), .ContentItem.PinItem'
         document.querySelectorAll(name).forEach(function(item){blockType_(item);})
@@ -1563,14 +1563,14 @@ function blockYanXuan() {
 function addTypeTips() {
     if (!menu_value('menu_typeTips')) return
     let style = `font-weight: bold;font-size: 13px;padding: 1px 4px 0;border-radius: 2px;display: inline-block;vertical-align: top;margin: ${(location.pathname === '/search') ? '2' : '4'}px 4px 0 0;`
-    document.body.appendChild(document.createElement('style')).textContent = `/* 区分问题文章 */
+    appendStyle(`/* 区分问题文章 */
 .AnswerItem .ContentItem-title a:not(.zhihu_e_toQuestion)::before {content:'问题';color: #f68b83;background-color: #f68b8333;${style}}
 /* 针对的是部分搜索词下搜索页开头的 "最新讨论" 之类的非常规元素 */
 .HotLanding-contentItem .ContentItem[data-za-detail-view-path-module=Content] .ContentItem-title a:not(.zhihu_e_toQuestion)::before {content:'问题';color: #f68b83;background-color: #f68b8333;${style}}
 .TopstoryQuestionAskItem .ContentItem-title a:not(.zhihu_e_toQuestion)::before {content:'问题';color: #ff5a4e;background-color: #ff5a4e33;${style}}
 .ZVideoItem .ContentItem-title a::before, .ZvideoItem .ContentItem-title a::before {content:'视频';color: #00BCD4;background-color: #00BCD433;${style}}
 .PinItem .ContentItem-title a::before {content:'想法';color: #4CAF50;background-color: #4CAF5033;${style}}
-.ArticleItem .ContentItem-title a::before {content:'文章';color: #2196F3;background-color: #2196F333;${style}}`;
+.ArticleItem .ContentItem-title a::before {content:'文章';color: #2196F3;background-color: #2196F333;${style}}`, document.body);
 }
 
 
@@ -1580,10 +1580,10 @@ function addToQuestion() {
 
     // 一开始加载的信息流 + 添加按钮样式
     if (location.pathname === '/search') {
-        document.documentElement.appendChild(document.createElement('style')).textContent = `a.zhihu_e_toQuestion {font-size: 13px !important;font-weight: normal !important;padding: 1px 6px 0 !important;border-radius: 2px !important;display: inline-block !important;vertical-align: top !important;height: 20.67px !important;line-height: 20.67px !important;margin-top: 2px !important;}`;
+        appendStyle(`a.zhihu_e_toQuestion {font-size: 13px !important;font-weight: normal !important;padding: 1px 6px 0 !important;border-radius: 2px !important;display: inline-block !important;vertical-align: top !important;height: 20.67px !important;line-height: 20.67px !important;margin-top: 2px !important;}`);
         addSetInterval_('h2.ContentItem-title a:not(.zhihu_e_tips)');
     } else {
-        document.documentElement.appendChild(document.createElement('style')).textContent = `a.zhihu_e_toQuestion {font-size: 13px !important;font-weight: normal !important;padding: 1px 6px 0 !important;border-radius: 2px !important;display: inline-block !important;vertical-align: top !important;margin-top: 4px !important;}`;
+        appendStyle(`a.zhihu_e_toQuestion {font-size: 13px !important;font-weight: normal !important;padding: 1px 6px 0 !important;border-radius: 2px !important;display: inline-block !important;vertical-align: top !important;margin-top: 4px !important;}`);
         document.querySelectorAll('h2.ContentItem-title a:not(.zhihu_e_tips)').forEach(function(item){addTypeTips_(item);})
     }
 
@@ -1656,7 +1656,7 @@ function removeLogin() {
         if (!document.querySelector('.AppHeader-profile>.AppHeader-menu')) { // 未登录
             const observer = new MutationObserver(removeLoginModal);
             observer.observe(document, { childList: true, subtree: true });
-            document.documentElement.appendChild(document.createElement('style')).textContent = '.Question-mainColumnLogin, button.AppHeader-login {display: none !important;}'; // 屏蔽问题页中间的登录提示
+            appendStyle('.Question-mainColumnLogin, button.AppHeader-login {display: none !important;}'); // 屏蔽问题页中间的登录提示
             if (getXpath('//button[text()="登录/注册"]')) getXpath('//button[text()="登录/注册"]').outerHTML = '<a class="Button AppHeader-login Button--blue" href="https://www.zhihu.com/signin" target="_blank">登录/注册</a>'; // [登录] 按钮跳转至登录页面
         }
     }
@@ -1708,7 +1708,7 @@ function cleanSearch() {
     });
     el.placeholder = '';
     observer.observe(el, { attributes: true });
-    document.documentElement.appendChild(document.createElement('style')).textContent = '.AutoComplete-group > .SearchBar-label:not(.SearchBar-label--history), .AutoComplete-group > [id^="AutoComplete2-topSearch-"], .AutoComplete-group > [id^="AutoComplete3-topSearch-"] {display: none !important;}';
+    appendStyle('.AutoComplete-group > .SearchBar-label:not(.SearchBar-label--history), .AutoComplete-group > [id^="AutoComplete2-topSearch-"], .AutoComplete-group > [id^="AutoComplete3-topSearch-"] {display: none !important;}');
 }
 
 
@@ -2009,7 +2009,13 @@ function switchHomeRecommend() {
     document.querySelectorAll('header.AppHeader nav>a:not([target])[href="https://www.zhihu.com/"]').forEach((a)=>{a.addEventListener('click', function(e){e.preventDefault();document.cookie='tst=r; expires=Thu, 18 Dec 2099 12:00:00 GMT; domain=.zhihu.com; path=/';location.href=this.href;return false;})})
 }
 
-// 单个增强初始化失败不能阻断其他功能；异常保留功能名和原始错误供定位。
+function appendStyle(css, parent = document.documentElement) {
+    const style = parent.appendChild(document.createElement('style'));
+    style.textContent = css;
+    return style;
+}
+
+// 单个增强初始化失败不能阻断其他功能；异常保留函数及场景标签和原始错误供定位。
 function runFeature(name, initialize) {
     try {
         return initialize();
@@ -2058,8 +2064,8 @@ function runFeature(name, initialize) {
             runFeature('collapsedAnswer', function(){collapsedAnswer();}); //                                              一键收起回答
         }
         runFeature('closeFloatingComments', function(){closeFloatingComments();}); //                                            快捷关闭悬浮评论（监听点击事件，点击网页两侧空白处）
-        runFeature('blockKeywords', function(){blockKeywords('comment');}); //                                           屏蔽指定关键词（评论）
-        runFeature('blockKeywords', function(){blockKeywords('waiting');}); //                                           屏蔽等你来答问题
+        runFeature('blockKeywords(comment)', function(){blockKeywords('comment');}); //                                           屏蔽指定关键词（评论）
+        runFeature('blockKeywords(waiting)', function(){blockKeywords('waiting');}); //                                           屏蔽等你来答问题
 
 
         if (location.pathname.indexOf('question') > -1 && location.href.indexOf('/log') == -1) { //       回答页 //
@@ -2068,13 +2074,13 @@ function runFeature(name, initialize) {
                 runFeature('collapsedNowAnswer', function(){collapsedNowAnswer('.QuestionPage>#AnswerFormPortalContainer+div>div:first-child');}); //收起当前回答 + 快捷返回顶部
                 runFeature('questionRichTextMore', function(){questionRichTextMore();}); //                                     展开问题描述
                 if (location.pathname.indexOf('answer') == -1) { //  问题页而不是回答页
-                    runFeature('blockLowCount', function(){blockLowCount('question');}); //                              屏蔽低赞/低评回答/文章
+                    runFeature('blockLowCount(question)', function(){blockLowCount('question');}); //                              屏蔽低赞/低评回答/文章
                 } else { // 将回答页的的查看全部回答选项去掉默认的点击事件改成静态链接，为了避免功能交叉混乱
                     document.querySelectorAll('div.Card.ViewAll>a').forEach((a)=>{a.outerHTML = a.outerHTML;})
                 }
-                runFeature('blockUsers', function(){blockUsers('question');}); //                                     屏蔽指定用户
+                runFeature('blockUsers(question)', function(){blockUsers('question');}); //                                     屏蔽指定用户
                 runFeature('blockYanXuan', function(){blockYanXuan();}); //                                             屏蔽盐选内容
-                runFeature('blockType', function(){blockType('question');}); //                                      屏蔽指定类别（视频/文章等）
+                runFeature('blockType(question)', function(){blockType('question');}); //                                      屏蔽指定类别（视频/文章等）
                 runFeature('defaultCollapsedAnswer', function(){defaultCollapsedAnswer();}); //                                   默认收起回答
             }
             setInterval(function(){runFeature('topTime_', function(){topTime_('.ContentItem.AnswerItem', 'ContentItem-meta');})}, 300); // 置顶显示时间
@@ -2087,9 +2093,9 @@ function runFeature(name, initialize) {
             setInterval(function(){runFeature('topTime_', function(){topTime_('.ContentItem.AnswerItem, .ContentItem.ArticleItem', 'SearchItem-meta');})}, 300); // 置顶显示时间
             runFeature('addTypeTips', function(){addTypeTips();}); //                                                  区分问题文章
             runFeature('addToQuestion', function(){addToQuestion();}); //                                                直达问题按钮
-            runFeature('blockUsers', function(){blockUsers('search');}); //                                           屏蔽指定用户
-            runFeature('blockKeywords', function(){blockKeywords('search');}); //                                        屏蔽指定关键词
-            runFeature('blockType', function(){blockType('search');}); //                                            屏蔽指定类别（视频/文章等）
+            runFeature('blockUsers(search)', function(){blockUsers('search');}); //                                           屏蔽指定用户
+            runFeature('blockKeywords(search)', function(){blockKeywords('search');}); //                                        屏蔽指定关键词
+            runFeature('blockType(search)', function(){blockType('search');}); //                                            屏蔽指定类别（视频/文章等）
 
 
         } else if (location.pathname.indexOf('/topic/') > -1) { //   话题页 //
@@ -2098,8 +2104,8 @@ function runFeature(name, initialize) {
                 setInterval(function(){runFeature('topTime_', function(){topTime_('.ContentItem.AnswerItem, .ContentItem.ArticleItem', 'ContentItem-meta');})}, 300); // 置顶显示时间
                 runFeature('addTypeTips', function(){addTypeTips();}); //                                              区分问题文章
                 runFeature('addToQuestion', function(){addToQuestion();}); //                                            直达问题按钮
-                runFeature('blockUsers', function(){blockUsers('topic');}); //                                        屏蔽指定用户
-                runFeature('blockKeywords', function(){blockKeywords('topic');}); //                                     屏蔽指定关键词
+                runFeature('blockUsers(topic)', function(){blockUsers('topic');}); //                                        屏蔽指定用户
+                runFeature('blockKeywords(topic)', function(){blockKeywords('topic');}); //                                     屏蔽指定关键词
             }
 
         } else if (location.hostname === 'zhuanlan.zhihu.com'){ //    文章 //
@@ -2123,8 +2129,8 @@ function runFeature(name, initialize) {
             runFeature('collapsedNowAnswer', function(){collapsedNowAnswer('main div');}); //                                 收起当前回答 + 快捷返回顶部
             runFeature('collapsedNowAnswer', function(){collapsedNowAnswer('.Profile-main');}); //                            收起当前回答 + 快捷返回顶部
             setInterval(function(){runFeature('topTime_', function(){topTime_('.ContentItem.AnswerItem, .ContentItem.ArticleItem', 'ContentItem-meta');})}, 300); // 置顶显示时间
-            runFeature('blockUsers', function(){blockUsers('people');}); //                                           屏蔽指定用户
-            runFeature('blockKeywords', function(){blockKeywords('people');}); //                                        屏蔽指定关键词
+            runFeature('blockUsers(people)', function(){blockUsers('people');}); //                                           屏蔽指定用户
+            runFeature('blockKeywords(people)', function(){blockKeywords('people');}); //                                        屏蔽指定关键词
 
 
         } else if (location.pathname.indexOf('/collection/') > -1) { // 收藏夹 //
@@ -2133,7 +2139,7 @@ function runFeature(name, initialize) {
             runFeature('collapsedNowAnswer', function(){collapsedNowAnswer('main');}); //                                     收起当前回答 + 快捷返回顶部
             runFeature('collapsedNowAnswer', function(){collapsedNowAnswer('.CollectionsDetailPage');}); //                   收起当前回答 + 快捷返回顶部
             setInterval(function(){runFeature('topTime_', function(){topTime_('.ContentItem.AnswerItem, .ContentItem.ArticleItem', 'ContentItem-meta');})}, 300); // 置顶显示时间
-            runFeature('blockKeywords', function(){blockKeywords('collection');}); //                                    屏蔽指定关键词
+            runFeature('blockKeywords(collection)', function(){blockKeywords('collection');}); //                                    屏蔽指定关键词
 
         } else if (location.pathname.indexOf('/pin/') > -1) { // 想法 //
             runFeature('backToTop', function(){backToTop('main[role=main]');}); //                                   快捷返回顶部
@@ -2142,8 +2148,8 @@ function runFeature(name, initialize) {
         } else if (['/','/hot','/follow','/column-square','/ring-feeds'].indexOf(location.pathname) !== -1) { //    首页 //
             runFeature('switchHomeRecommend', function(){switchHomeRecommend();}); // 针对首页推荐
             // 解决屏蔽类别后，因为首页信息流太少而没有滚动条导致无法加载更多内容的问题
-            document.documentElement.appendChild(document.createElement('style')).textContent = '.Topstory-container {min-height: 1500px;}';
-            if (menu_value('menu_blockTypeVideo')) document.documentElement.appendChild(document.createElement('style')).textContent = `.Card .ZVideoItem-video, nav.TopstoryTabs > a[aria-controls="Topstory-zvideo"] {display: none !important;}`;
+            appendStyle('.Topstory-container {min-height: 1500px;}');
+            if (menu_value('menu_blockTypeVideo')) appendStyle(`.Card .ZVideoItem-video, nav.TopstoryTabs > a[aria-controls="Topstory-zvideo"] {display: none !important;}`);
 
             runFeature('collapsedNowAnswer', function(){collapsedNowAnswer('.App-main .Topstory');}); //                      收起当前回答 + 快捷返回顶部
             runFeature('collapsedNowAnswer', function(){collapsedNowAnswer('.App-main .Topstory-container');}); //            收起当前回答 + 快捷返回顶部
@@ -2152,19 +2158,19 @@ function runFeature(name, initialize) {
                 runFeature('addTypeTips', function(){addTypeTips();}); //                                                  区分问题文章
                 runFeature('addToQuestion', function(){addToQuestion();}); //                                                直达问题按钮
                 if (location.pathname == '/') { // 推荐
-                    runFeature('blockLowCount', function(){blockLowCount('index');}); //                                     屏蔽低赞/低评回答/文章
-                    runFeature('blockUsers', function(){blockUsers('index');}); //                                        屏蔽指定用户
-                    runFeature('blockKeywords', function(){blockKeywords('index');}); //                                     屏蔽指定关键词
+                    runFeature('blockLowCount(index)', function(){blockLowCount('index');}); //                                     屏蔽低赞/低评回答/文章
+                    runFeature('blockUsers(index)', function(){blockUsers('index');}); //                                        屏蔽指定用户
+                    runFeature('blockKeywords(index)', function(){blockKeywords('index');}); //                                     屏蔽指定关键词
                     runFeature('blockType', function(){blockType();}); //                                                屏蔽指定类别（视频/文章等）
                 } else if (location.pathname == '/hot') { // 热榜
-                    runFeature('blockKeywords', function(){blockKeywords('index');}); //                                     屏蔽指定关键词
+                    runFeature('blockKeywords(index)', function(){blockKeywords('index');}); //                                     屏蔽指定关键词
                     runFeature('blockHotOther', function(){blockHotOther();}); //                                            屏蔽热榜杂项
                 } else if (location.pathname == '/follow') { // 关注
-                    runFeature('blockLowCount', function(){blockLowCount('follow');}); //                                    屏蔽低赞/低评回答/文章
-                    runFeature('blockUsers', function(){blockUsers('follow');}); //                                       屏蔽指定用户
-                    runFeature('blockKeywords', function(){blockKeywords('follow');}); //                                    屏蔽指定关键词
+                    runFeature('blockLowCount(follow)', function(){blockLowCount('follow');}); //                                    屏蔽低赞/低评回答/文章
+                    runFeature('blockUsers(follow)', function(){blockUsers('follow');}); //                                       屏蔽指定用户
+                    runFeature('blockKeywords(follow)', function(){blockKeywords('follow');}); //                                    屏蔽指定关键词
                     runFeature('blockType', function(){blockType();}); //                                                屏蔽指定类别（视频/文章等）
-                    runFeature('blockType', function(){blockType('follow');}); //                                        屏蔽指定类别（赞同了XX/关注了XX等）
+                    runFeature('blockType(follow)', function(){blockType('follow');}); //                                        屏蔽指定类别（赞同了XX/关注了XX等）
                 }
             }
         }
