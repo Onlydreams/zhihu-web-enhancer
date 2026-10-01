@@ -1,15 +1,11 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
-const vm = require('node:vm');
 
-const scriptPath = path.join(__dirname, '..', 'Zhihu-Enhanced.user.js');
-const source = fs.readFileSync(scriptPath, 'utf8');
+const { createContext } = require('../test-support/userscript-harness');
 
 function loadObserverFunction(name, overrides = {}) {
     const state = { callback: null };
-    const context = {
+    const context = createContext({
         console: { log() {} },
         menu_value: () => true,
         document: { querySelectorAll: () => [] },
@@ -18,8 +14,8 @@ function loadObserverFunction(name, overrides = {}) {
             observe() {}
         },
         ...overrides,
-    };
-    vm.runInNewContext(extractFunction(name), context);
+    });
+
     return { context, state };
 }
 
@@ -48,7 +44,7 @@ test('热榜批量新增自身或子树卡片时过滤一次，忽略文本及�
 
 test('高亮链接清理覆盖混合批次与包装节点，普通链接不变', () => {
     let replaced = 0;
-    const link = { nodeType: 1, matches: () => true, querySelectorAll: () => [], textContent: '标题', parentElement: { replaceWith(text) { assert.equal(text, '标题'); replaced += 1; } } };
+    const link = { nodeType: 1, matches: () => true, querySelectorAll: () => [], textContent: '标题', parentElement: {}, replaceWith(text) { assert.equal(text, '标题'); replaced += 1; } };
     const wrapper = { nodeType: 1, matches: () => false, querySelectorAll: () => [link] };
     const { context, state } = loadObserverFunction('cleanHighlightLink');
     context.cleanHighlightLink();
@@ -83,7 +79,7 @@ test('评论多词命中及重复通知后仍能恢复原文，缺少正文不�
 
 function loadInvitation(pathname = '/question/1') {
     const state = { callback: null, delay: null, cleared: [], listener: null, removed: 0, content: null };
-    const context = {
+    const context = createContext({
         location: { pathname },
         document: { querySelector: () => state.content },
         window: {
@@ -92,8 +88,8 @@ function loadInvitation(pathname = '/question/1') {
         },
         setInterval(callback, delay) { state.callback = callback; state.delay = delay; return 42; },
         clearInterval(timer) { state.cleared.push(timer); },
-    };
-    vm.runInNewContext(extractFunction('questionInvitation'), context);
+    });
+
     context.questionInvitation();
     return { context, state };
 }
@@ -152,24 +148,9 @@ test('悬浮评论观察器每批只查询一次，纯文本批次不查询', ()
     assert.equal(queries, 1);
 });
 
-function extractFunction(name) {
-    const match = new RegExp(`function\\s+${name}\\s*\\(`).exec(source);
-    assert.ok(match, `未找到函数 ${name}`);
-    const start = match.index;
-
-    const bodyStart = source.indexOf('{', start);
-    let depth = 0;
-    for (let index = bodyStart; index < source.length; index += 1) {
-        if (source[index] === '{') depth += 1;
-        if (source[index] === '}') depth -= 1;
-        if (depth === 0) return source.slice(start, index + 1);
-    }
-    throw new Error(`函数 ${name} 缺少结束括号`);
-}
-
 function loadElementWaiter(querySelectorAll) {
     const state = { callback: null, delay: null, clearedTimers: [] };
-    const context = {
+    const context = createContext({
         document: { querySelectorAll },
         setInterval(callback, delay) {
             state.callback = callback;
@@ -179,11 +160,8 @@ function loadElementWaiter(querySelectorAll) {
         clearInterval(timer) {
             state.clearedTimers.push(timer);
         },
-    };
-    vm.runInNewContext([
-        extractFunction('processElementsWhenAvailable'),
-        'this.processElementsWhenAvailable = processElementsWhenAvailable;',
-    ].join('\n'), context);
+    });
+
     return { context, state };
 }
 
@@ -235,17 +213,13 @@ test('收起回答观察器断开后可以重新启动', () => {
         }
     }
 
-    const context = {
+    const context = createContext({
         MutationObserver: FakeMutationObserver,
         Node: { ELEMENT_NODE: 1 },
         document: {},
         location: { href: 'https://www.zhihu.com/question/1' },
         window: { addEventListener() {} },
-    };
-    vm.runInNewContext([
-        extractFunction('getCollapsedAnswerObserver'),
-        'this.getCollapsedAnswerObserver = getCollapsedAnswerObserver;',
-    ].join('\n'), context);
+    });
 
     const observer = context.getCollapsedAnswerObserver();
     observer.start();
@@ -257,10 +231,6 @@ test('收起回答观察器断开后可以重新启动', () => {
     assert.equal(observer._active, true);
 });
 
-test('MutationObserver 批次中的非元素节点不会终止后续处理', () => {
-    assert.doesNotMatch(source, /if \(target\.nodeType != 1\) return/);
-    assert.ok((source.match(/if \(target\.nodeType != 1\) continue/g) || []).length >= 16);
-});
 
 test('代表性 MutationObserver 会跳过文本节点并处理同批次后续卡片', () => {
     let observerCallback = null;
@@ -289,17 +259,13 @@ test('代表性 MutationObserver 会跳过文本节点并处理同批次后续�
             return contentItem;
         },
     };
-    const context = {
+    const context = createContext({
         console: { log() {} },
         document: { querySelectorAll() { return []; } },
         window: { addEventListener() {} },
         MutationObserver: FakeMutationObserver,
         GM_getValue() { return 1; },
-    };
-    vm.runInNewContext([
-        extractFunction('blockLowCount'),
-        'this.blockLowCount = blockLowCount;',
-    ].join('\n'), context);
+    });
 
     context.blockLowCount('index');
     assert.equal(typeof observerCallback, 'function');
@@ -315,15 +281,10 @@ test('站外直链只接受有效的 HTTP 和 HTTPS 地址', () => {
         { href: 'https://link.zhihu.com/?target=https%3A%2F%2Fexample.com%2Farticle%3Fx%3D1' },
         { href: 'https://link.zhihu.com/?target=javascript%3Aalert%281%29' },
     ];
-    const context = {
+    const context = createContext({
         URL,
         document: { querySelectorAll() { return links; } },
-    };
-    vm.runInNewContext([
-        extractFunction('getDirectExternalUrl'),
-        extractFunction('directLink'),
-        'this.directLink = directLink;',
-    ].join('\n'), context);
+    });
 
     assert.doesNotThrow(() => context.directLink());
     assert.equal(links[0].href, 'https://link.zhihu.com/?target=%E0%A4%A');

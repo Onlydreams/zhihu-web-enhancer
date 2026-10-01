@@ -1,35 +1,12 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
-const vm = require('node:vm');
 
-const scriptPath = path.join(__dirname, '..', 'Zhihu-Enhanced.user.js');
-const source = fs.readFileSync(scriptPath, 'utf8');
-
-function extractFunction(name) {
-    const start = source.indexOf(`function ${name}(`);
-    assert.notEqual(start, -1, `未找到函数 ${name}`);
-
-    const bodyStart = source.indexOf('{', start);
-    let depth = 0;
-    for (let index = bodyStart; index < source.length; index += 1) {
-        if (source[index] === '{') depth += 1;
-        if (source[index] === '}') depth -= 1;
-        if (depth === 0) return source.slice(start, index + 1);
-    }
-    throw new Error(`函数 ${name} 缺少结束括号`);
-}
+const { source, createContext } = require('../test-support/userscript-harness');
 
 test('屏蔽用户样式在页面首次绘制前生效', () => {
     assert.match(source, /@run-at\s+document-start/);
 
-    const context = {};
-    vm.runInNewContext([
-        extractFunction('escapeCssAttributeValue'),
-        extractFunction('buildEarlyBlockedUserCss'),
-        'this.buildEarlyBlockedUserCss = buildEarlyBlockedUserCss;',
-    ].join('\n'), context);
+    const context = createContext();
 
     const css = context.buildEarlyBlockedUserCss(['卜算子', "O'Brien", '', '   ']);
     assert.match(css, /\.List-item:has\(/);
