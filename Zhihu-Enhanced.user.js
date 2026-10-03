@@ -3,7 +3,7 @@
 // @name:zh-CN   知乎网页增强（Onlydreams 维护版）
 // @name:zh-TW   知乎網頁增強（Onlydreams 維護版）
 // @name:ru      Zhihu Web Enhancer (Onlydreams fork)
-// @version      2.3.39
+// @version      2.3.40
 // @author       X.I.U (original), Onlydreams (fork maintainer)
 // @description  Unofficial derivative of Zhihu enhancement, with keyword filtering for all Waiting for Answers categories.
 // @description:zh-CN  知乎增强非官方维护版：保留上游网页增强能力，并支持“等你来答”全部分类的关键词过滤。
@@ -1123,22 +1123,47 @@ function blockKeywords(type) {
 
 
     function blockKeywords_comment() {
+        const blockedComments = new WeakMap();
         function filterComment(comment) {
             let content = comment.querySelector('.CommentContent'); // 寻找评论文字所在元素
-            if (!menu_value('menu_blockKeywords') || !menu_value('menu_blockKeywordsComment') || !content || content.dataset.text !== undefined) return
+            if (!menu_value('menu_blockKeywords') || !menu_value('menu_blockKeywordsComment') || !content || content.dataset.zhihuEBlockedKeywordComment !== undefined) return
             let text = content.textContent.toLowerCase(); // 全部转为小写（用来不区分大小写）
             content.querySelectorAll('img.sticker[alt]').forEach((img)=>{text += img.alt}) // 将评论中的表情添加到待遍历的评论文字中
 
             if (getMatchedBlockKeyword(text, menu_value('menu_customBlockKeywords')) !== null) {
                 console.log('已屏蔽评论：' + text);
-                content.dataset.text = content.innerHTML;
-                content.onclick = (e)=>{if (e.target.dataset.text) {e.target.innerHTML = e.target.dataset.text;e.target.removeAttribute('data-text');}};
-                content.textContent = '[该评论已屏蔽，可点击显示]';
+                // 正文可能由 React 持有；隐藏原节点，恢复时保留链接、图片和事件。
+                const display = content.style.getPropertyValue('display');
+                const priority = content.style.getPropertyPriority('display');
+                const placeholder = document.createElement('button');
+                placeholder.type = 'button';
+                placeholder.className = 'Button zhihuE_BlockedComment Button--plain';
+                placeholder.textContent = '[该评论已屏蔽，可点击显示]';
+                content.dataset.zhihuEBlockedKeywordComment = '';
+                content.style.setProperty('display', 'none', 'important');
+                content.insertAdjacentElement('beforebegin', placeholder);
+                const restore = function(){
+                    if (display) content.style.setProperty('display', display, priority);
+                    else content.style.removeProperty('display');
+                    delete content.dataset.zhihuEBlockedKeywordComment;
+                    blockedComments.delete(content);
+                    placeholder.remove();
+                };
+                blockedComments.set(content, { placeholder, restore });
+                placeholder.onclick = function(event){event.preventDefault();event.stopPropagation();restore();};
             }
         }
 
         const callback = (mutationsList, observer) => {
             for (const mutation of mutationsList) {
+                // 正文可能单独替换或搬移；只清理移除子树中的配对，不扫描整页。
+                for (const target of mutation.removedNodes || []) {
+                    if (target.nodeType != 1) continue;
+                    for (const content of [target, ...target.querySelectorAll('.CommentContent')]) {
+                        const state = blockedComments.get(content);
+                        if (state && (!document.contains(content) || state.placeholder.parentElement !== content.parentElement)) state.restore();
+                    }
+                }
                 for (const target of mutation.addedNodes) {
                     if (target.nodeType != 1) continue
                     //console.log(target);
@@ -1412,7 +1437,7 @@ function blockType(type) {
 
     function hideParentCard(titleA, className) {
         const card = findParentElement(titleA, className);
-        if (card) card.hidden = true;
+        if (card) {card.hidden = true;card.style.setProperty('display', 'none', 'important');}
         return card;
     }
 
@@ -1423,7 +1448,7 @@ function blockType(type) {
             if (location.search.indexOf('type=content') === -1) return //   仅限搜索页的 [综合]
             if (titleA.href.indexOf('/zvideo/') > -1 || titleA.href.indexOf('video.zhihu.com') > -1) { // 如果是视频
                 const card = findParentElement(titleA, 'Card');
-                if (menu_value('menu_blockTypeVideo') && card) card.remove();
+                if (menu_value('menu_blockTypeVideo') && card) {card.hidden = true;card.style.setProperty('display', 'none', 'important');}
             } else if (titleA.href.indexOf('zhuanlan.zhihu.com') > -1) { // 如果是文章
                 if (menu_value('menu_blockTypeArticle')) hideParentCard(titleA, 'Card SearchResult-Card');
             } else if (titleA.href.indexOf('/topic/') > -1) { //            如果是话题
@@ -1448,7 +1473,7 @@ function blockType(type) {
             } else if (titleA.href.indexOf('/answer/') > -1) { //           如果是问题（视频回答）
                 const answer = findParentElement(titleA, 'ContentItem AnswerItem');
                 if (answer && answer.querySelector('.VideoAnswerPlayer')) {
-                    if (menu_value('menu_blockTypeVideo') && hideParentCard(titleA, 'Card TopstoryItem TopstoryItem-isRecommend')) answer.remove();
+                    if (menu_value('menu_blockTypeVideo')) hideParentCard(titleA, 'Card TopstoryItem TopstoryItem-isRecommend');
                 }
             } else if (titleA.href.indexOf('/education/video-course/') > -1) { // 如果是视频课程
                 if (menu_value('menu_blockTypeVideo')) hideParentCard(titleA, 'Card TopstoryItem TopstoryItem-isRecommend');
@@ -1491,25 +1516,20 @@ function findParentElement(item, className, type = false) {
 
 // 移除高亮链接
 function cleanHighlightLink() {
-    if (!menu_value('menu_cleanHighlightLink')) return;
+    if (!menu_value('menu_cleanHighlightLink') || window._zhihuEHighlightLinkInstalled) return;
     const selector = 'span > a[data-za-not-track-link][href^="https://zhida.zhihu.com/search?"]';
-    function cleanLink(link) {
-        if (link.parentElement) link.replaceWith(link.textContent);
-    }
-    const callback = (mutationsList, observer) => {
-        for (const mutation of mutationsList) {
-            for (const target of mutation.addedNodes) {
-                if (target.nodeType != 1) continue
-                if (target.matches(selector)) cleanLink(target);
-                target.querySelectorAll(selector).forEach(cleanLink);
-            }
-        }
+    // 删除链接会破坏 React 收起回答时的节点引用；样式和事件委托同时覆盖后续加载。
+    appendStyle(`${selector} {color: inherit !important;text-decoration: none !important;background: none !important;cursor: text !important;}`);
+    const stopLink = function(event){
+        if (!menu_value('menu_cleanHighlightLink')) return;
+        const target = event.target.nodeType === 1 ? event.target : event.target.parentElement;
+        if (!target || !target.closest(selector)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
     };
-    const observer = new MutationObserver(callback);
-    observer.observe(document, { childList: true, subtree: true });
-
-    // 针对的是打开网页后直接加载的前面几个回答（上面哪些是针对动态加载的回答）
-    document.querySelectorAll(selector).forEach(cleanLink);
+    document.addEventListener('click', stopLink, true);
+    document.addEventListener('auxclick', stopLink, true);
+    window._zhihuEHighlightLinkInstalled = true;
 }
 
 
@@ -1606,9 +1626,6 @@ function addToQuestion() {
     function addTypeTips_(titleA) {
         if (!titleA) return // 判断是否为真
         if (titleA.parentElement.querySelector('a.zhihu_e_toQuestion')) return // 判断是否已添加
-        if (titleA.textContent.indexOf('?') != -1) { // 把问题末尾英文问好 [?] 的替换为中文问好 [？]，这样按钮与标题之间的间距就刚刚好~
-            titleA.innerHTML = titleA.innerHTML.replace('?', "？")
-        }
         if (/answer\/\d+/.test(titleA.href)) { //  如果是指向回答的问题（而非指向纯问题的链接）
             const titleA_meta = titleA.parentElement.parentElement.querySelector('meta[itemprop="url"]'); // 获取该问题页地址
             if (!titleA_meta) return // 判断元素是否存在（针对的是部分搜索词下搜索页开头的 "最新讨论" 之类的非常规元素）
@@ -1631,6 +1648,8 @@ function questionRichTextMore() {
 
 // 移除登录弹窗
 function removeLogin() {
+    const profile = location.hostname === 'zhuanlan.zhihu.com' ? '.ColumnPageHeader-profile>.AppHeader-menu' : '.AppHeader-profile>.AppHeader-menu';
+    if (document.querySelector(profile) || window._zhihuELoginInstalled) return;
     const removeLoginModal = (mutationsList, observer) => {
         for (const mutation of mutationsList) {
             for (const target of mutation.addedNodes) {
@@ -1638,28 +1657,30 @@ function removeLogin() {
                 if (target.matches('.signFlowModal') || target.querySelector('.signFlowModal')) {
                     let button = target.querySelector('.Button.Modal-closeButton.Button--plain');
                     if (button) button.click();
-                } else if (getXpath('self::button[text()="立即登录/注册"] | .//button[text()="立即登录/注册"]', target)) {
-                    target.remove();
+                } else {
+                    const button = getXpath('self::button[text()="立即登录/注册"] | .//button[text()="立即登录/注册"]', target);
+                    // 新增节点可能是整页包装层；只隐藏已识别的提示或按钮。
+                    if (button) {
+                        const prompt = button.closest('.Question-mainColumnLogin') || button;
+                        prompt.hidden = true;
+                        prompt.style.setProperty('display', 'none', 'important');
+                    }
                 }
             }
         }
     };
 
-    // 未登录时才会监听并移除登录弹窗
-    if(location.hostname === 'zhuanlan.zhihu.com') { // 如果是文章页
-        if (!document.querySelector('.ColumnPageHeader-profile>.AppHeader-menu')) { // 未登录
-            const observer = new MutationObserver(removeLoginModal);
-            observer.observe(document, { childList: true, subtree: true });
-            if (getXpath('//button[text()="登录/注册"]')) getXpath('//button[text()="登录/注册"]').outerHTML = '<a class="Button AppHeader-login Button--blue" href="https://www.zhihu.com/signin" target="_blank">登录/注册</a>'; // [登录] 按钮跳转至登录页面
-        }
-    } else { // 不是文章页
-        if (!document.querySelector('.AppHeader-profile>.AppHeader-menu')) { // 未登录
-            const observer = new MutationObserver(removeLoginModal);
-            observer.observe(document, { childList: true, subtree: true });
-            appendStyle('.Question-mainColumnLogin, button.AppHeader-login {display: none !important;}'); // 屏蔽问题页中间的登录提示
-            if (getXpath('//button[text()="登录/注册"]')) getXpath('//button[text()="登录/注册"]').outerHTML = '<a class="Button AppHeader-login Button--blue" href="https://www.zhihu.com/signin" target="_blank">登录/注册</a>'; // [登录] 按钮跳转至登录页面
-        }
-    }
+    const observer = new MutationObserver(removeLoginModal);
+    observer.observe(document, { childList: true, subtree: true });
+    appendStyle('.Question-mainColumnLogin {display: none !important;}');
+    document.addEventListener('click', function(event){
+        const target = event.target.nodeType === 1 ? event.target : event.target.parentElement;
+        if (!target || !target.closest('button.AppHeader-login')) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        GM_openInTab('https://www.zhihu.com/signin', {active: true, insert: true, setParent: true});
+    }, true);
+    window._zhihuELoginInstalled = true;
 }
 
 // 净化标题消息
@@ -1828,12 +1849,12 @@ function topTime_(css, classs) {
 function topTime_post() {
     let t = document.querySelector('.ContentItem-time:not(.xiu-time)'); if (!t) return
     // 完整显示时间
-    if (t.textContent.indexOf('编辑于') > -1 && !(t.classList.contains('xiu-time'))) {
+    if (t.textContent.indexOf('编辑于') > -1 && t.childNodes.length === 1 && t.firstChild.nodeType === 3) {
         let tt = t.textContent;
         t.click();
-        t.textContent = (t.textContent + ' ，' + tt)
-        t.classList.add('xiu-time');
+        setLeafText(t, t.textContent + ' ，' + tt);
     }
+    t.classList.add('xiu-time');
 
     // 置顶显示时间
     if (menu_value('menu_publishTop') && !(document.querySelector('.Post-Header > .ContentItem-time')) && !(document.querySelector('.ContentItem-meta > .ContentItem-time'))) {
@@ -1845,12 +1866,21 @@ function topTime_post() {
 
 
 // 完整显示时间
+// 只更新已有 Text 节点；遇到带图标或子组件的时间/排名保留页面原结构。
+function setLeafText(element, text) {
+    if (!element || element.childNodes.length !== 1 || element.firstChild.nodeType !== 3) return false;
+    element.firstChild.nodeValue = String(text);
+    return true;
+}
+
 function topTime_allTime(t) {
+    const link = t.querySelector('a');
+    if (!link) return;
     if (t.textContent.indexOf('发布于') > -1 && t.textContent.indexOf('编辑于') == -1) {
-        t.querySelector('a').textContent = (t.querySelector('a').dataset.tooltip);
+        if (link.dataset.tooltip) setLeafText(link, link.dataset.tooltip);
         t.classList.add('full');
     } else if (t.textContent.indexOf('发布于') == -1 && t.textContent.indexOf('编辑于') > -1) {
-        t.querySelector('a').textContent = (t.querySelector('a').dataset.tooltip) + ' ，' + (t.querySelector('a').textContent);
+        if (link.dataset.tooltip) setLeafText(link, link.dataset.tooltip + ' ，' + link.textContent);
         t.classList.add('full');
     }
 }
@@ -1933,17 +1963,24 @@ function questionInvitation(){
             return
         }
         stopWaiting();
+        if (title.querySelector('button.zhihuE_InvitationToggle')) return;
         q.style.display = 'none';
-        title.textContent = title.innerText;
-        title.insertAdjacentHTML('beforeend', '<span style="cursor: pointer; font-size: 14px; color: #919aae;"> 展开/折叠</span>');
-        // 点击事件（展开/折叠）
-        topbar.onclick = function(){
+        const button = title.appendChild(document.createElement('button'));
+        button.type = 'button';
+        button.className = 'Button zhihuE_InvitationToggle Button--plain';
+        button.style.cssText = 'cursor: pointer;font-size: 14px;color: #919aae;margin-left: 5px;';
+        button.textContent = '展开/折叠';
+        const toggle = function(){
             if (q.style.display == 'none') {
                 q.style.display = ''
             } else {
                 q.style.display = 'none'
             }
         }
+        button.addEventListener('click', function(event){event.preventDefault();event.stopPropagation();toggle();});
+        topbar.addEventListener('click', function(event){
+            if (!event.target.closest('a, button, input, select, textarea')) toggle();
+        });
     }, 100);
     window.addEventListener('urlchange', stopWaiting);
 }
@@ -1963,11 +2000,11 @@ function blockHotOther() {
         fixItemRank();
     };
 
-    // 移除非问题的内容
+    // 保留 React 持有的榜单项，只改变显示。
     const removeLiveItems = () => {
         const hotItems = document.querySelectorAll('.HotList-list .HotItem');
         for (const item of hotItems) {
-            if (!isQuestionItem(item)) item.remove();
+            if (!isQuestionItem(item)) {item.hidden = true;item.style.setProperty('display', 'none', 'important');}
         }
     }
 
@@ -1976,7 +2013,7 @@ function blockHotOther() {
         const hotItems = document.querySelectorAll('.HotList-list .HotItem:not([hidden])');
         hotItems.forEach((item, index) => {
             const rank = item.querySelector('.HotItem-index .HotItem-rank');
-            if (rank !== null) rank.innerText = index + 1;
+            if (rank !== null) setLeafText(rank, index + 1);
         });
     }
 
@@ -2002,11 +2039,32 @@ function blockHotOther() {
 // 将关注/推荐/热榜/专栏的选项去掉默认的点击事件改成静态链接（针对首页互相切换（知乎这里切换是动态加载的），为了避免功能交叉混乱
 // 针对所有页面
 function switchHome() {
-    document.querySelectorAll('header.AppHeader nav').forEach((a)=>{a.outerHTML = a.outerHTML;})
+    if (window._zhihuEStaticNavigationInstalled) return;
+    const navigate = function(event){
+        const target = event.target.nodeType === 1 ? event.target : event.target.parentElement;
+        const link = target && target.closest('header.AppHeader nav a[href], div.Card.ViewAll > a[href]');
+        if (!link || (link.matches('div.Card.ViewAll > a[href]') && location.pathname.indexOf('/answer/') === -1)) return;
+        try {
+            if (!/^https?:$/.test(new URL(link.href, location.href).protocol)) return;
+        } catch (error) { return; }
+        // 捕获阶段阻止 SPA 接管，保留链接身份以及新标签、中键等原生行为。
+        event.stopImmediatePropagation();
+        if ((event.type === 'click' && event.button === 0) || (event.type === 'auxclick' && event.button === 1)) switchHomeRecommend(link);
+        if (event.type !== 'click' || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey ||
+            (link.getAttribute('target') && link.getAttribute('target') !== '_self') || link.getAttribute('download') !== null) return;
+        event.preventDefault();
+        location.href = link.href;
+    };
+    document.addEventListener('click', navigate, true);
+    document.addEventListener('auxclick', navigate, true);
+    window._zhihuEStaticNavigationInstalled = true;
 }
 // 针对首页几个页面
-function switchHomeRecommend() {
-    document.querySelectorAll('header.AppHeader nav>a:not([target])[href="https://www.zhihu.com/"]').forEach((a)=>{a.addEventListener('click', function(e){e.preventDefault();document.cookie='tst=r; expires=Thu, 18 Dec 2099 12:00:00 GMT; domain=.zhihu.com; path=/';location.href=this.href;return false;})})
+function switchHomeRecommend(link) {
+    if (['/','/hot','/follow','/column-square','/ring-feeds'].indexOf(location.pathname) !== -1 &&
+        link.matches('header.AppHeader nav>a:not([target])[href="https://www.zhihu.com/"]')) {
+        document.cookie = 'tst=r; expires=Thu, 18 Dec 2099 12:00:00 GMT; domain=.zhihu.com; path=/';
+    }
 }
 
 function appendStyle(css, parent = document.documentElement) {
@@ -2075,8 +2133,6 @@ function runFeature(name, initialize) {
                 runFeature('questionRichTextMore', function(){questionRichTextMore();}); //                                     展开问题描述
                 if (location.pathname.indexOf('answer') == -1) { //  问题页而不是回答页
                     runFeature('blockLowCount(question)', function(){blockLowCount('question');}); //                              屏蔽低赞/低评回答/文章
-                } else { // 将回答页的的查看全部回答选项去掉默认的点击事件改成静态链接，为了避免功能交叉混乱
-                    document.querySelectorAll('div.Card.ViewAll>a').forEach((a)=>{a.outerHTML = a.outerHTML;})
                 }
                 runFeature('blockUsers(question)', function(){blockUsers('question');}); //                                     屏蔽指定用户
                 runFeature('blockYanXuan', function(){blockYanXuan();}); //                                             屏蔽盐选内容
@@ -2146,7 +2202,6 @@ function runFeature(name, initialize) {
             setInterval(function(){runFeature('topTime_', function(){topTime_('.ContentItem.PinItem', 'ContentItem-meta');})}, 300); // 置顶显示时间
 
         } else if (['/','/hot','/follow','/column-square','/ring-feeds'].indexOf(location.pathname) !== -1) { //    首页 //
-            runFeature('switchHomeRecommend', function(){switchHomeRecommend();}); // 针对首页推荐
             // 解决屏蔽类别后，因为首页信息流太少而没有滚动条导致无法加载更多内容的问题
             appendStyle('.Topstory-container {min-height: 1500px;}');
             if (menu_value('menu_blockTypeVideo')) appendStyle(`.Card .ZVideoItem-video, nav.TopstoryTabs > a[aria-controls="Topstory-zvideo"] {display: none !important;}`);

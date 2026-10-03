@@ -4,15 +4,57 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'Zhihu-Enhanced.user.js'), 'utf8');
 
+function textNode(value) {
+    return {
+        nodeType: 3, textContent: String(value), parentElement: null,
+        get nodeValue() { return this.textContent; },
+        set nodeValue(value) { this.textContent = String(value); },
+    };
+}
+
+function dispatch(target, type, properties = {}, document) {
+    const event = {
+        type, target, button: 0, defaultPrevented: false, stopped: false, immediateStopped: false,
+        preventDefault() { this.defaultPrevented = true; },
+        stopPropagation() { this.stopped = true; },
+        stopImmediatePropagation() { this.stopped = this.immediateStopped = true; },
+        ...properties,
+    };
+    const path = [];
+    for (let node = target; node; node = node.parentElement) path.push(node);
+    if (document) path.push(document);
+    function invoke(node, capture) {
+        event.currentTarget = node;
+        for (const [callback, options] of node.listeners?.get(type) || []) {
+            if ((options === true || options?.capture === true) !== capture) continue;
+            callback.call(node, event);
+            if (event.immediateStopped) return;
+        }
+        if (!capture) node['on' + type]?.call(node, event);
+    }
+    for (const node of [...path].reverse()) { invoke(node, true); if (event.stopped) return event; }
+    for (const node of path) { invoke(node, false); if (event.stopped) break; }
+    return event;
+}
+
 // 只实现测试需要的 DOM 操作；选择器由各场景显式提供，不模拟浏览器 CSS 引擎。
 function element(tagName = 'div', selectors = []) {
     const node = {
         nodeType: 1, tagName: tagName.toUpperCase(), children: [], parentElement: null,
         dataset: {}, className: '', attributes: new Map(), selectors: new Set(selectors), htmlWrites: [],
-        hidden: false,
+        hidden: false, listeners: new Map(),
         style: { display: '', cssText: '', removeProperty(name) { this[name] = ''; this[name + 'Priority'] = ''; }, getPropertyValue(name) { return this[name] || ''; }, getPropertyPriority(name) { return this[name + 'Priority'] || ''; }, setProperty(name, value, priority) { this[name] = value; this[name + 'Priority'] = priority; } },
-        classList: { contains(name) { return node.className.split(/\s+/).includes(name); } },
-        matches(selector) { return this.selectors.has(selector) || (selector === 'button[data-name][data-userid]' && this.tagName === 'BUTTON' && this.dataset.name !== undefined && this.dataset.userid !== undefined); },
+        classList: {
+            contains(name) { return node.className.split(/\s+/).includes(name); },
+            add(...names) { node.className = [...new Set([...node.className.split(/\s+/).filter(Boolean), ...names])].join(' '); },
+            remove(...names) { node.className = node.className.split(/\s+/).filter(name => !names.includes(name)).join(' '); },
+        },
+        matches(selector) {
+            const classSelector = /^([a-z]+)?\.([\w-]+)$/.exec(selector);
+            return this.selectors.has(selector) ||
+                (classSelector && (!classSelector[1] || this.tagName === classSelector[1].toUpperCase()) && this.classList.contains(classSelector[2])) ||
+                (selector === 'button[data-name][data-userid]' && this.tagName === 'BUTTON' && this.dataset.name !== undefined && this.dataset.userid !== undefined);
+        },
         closest(selector) { return this.matches(selector) ? this : this.parentElement?.closest(selector) || null; },
         contains(target) { return target === this || this.children.some(child => child === target || (child.nodeType === 1 && child.contains(target))); },
         querySelectorAll(selector) {
@@ -44,15 +86,23 @@ function element(tagName = 'div', selectors = []) {
             this.parentElement = null;
         },
         setAttribute(name, value) { this.attributes.set(name, String(value)); },
+        getAttribute(name) { return this.attributes.get(name) ?? null; },
         hasAttribute(name) { return this.attributes.has(name); },
         removeAttribute(name) { this.attributes.delete(name); if (name === 'data-text') delete this.dataset.text; },
-        addEventListener(name, callback) { this['on' + name] = callback; },
-        click() { this.onclick?.call(this, { target: this }); },
+        addEventListener(name, callback, options) { if (!this.listeners.has(name)) this.listeners.set(name, new Map()); this.listeners.get(name).set(callback, options); },
+        removeEventListener(name, callback) { this.listeners.get(name)?.delete(callback); },
+        click() { return dispatch(this, 'click'); },
     };
     Object.defineProperties(node, {
-        textContent: { get() { return (this.text || '') + this.children.map(child => child.textContent).join(''); }, set(value) { this.text = String(value); this.children.forEach(child => { child.parentElement = null; }); this.children = []; } },
-        innerHTML: { get() { return this.html || this.textContent; }, set(value) { this.html = String(value); this.htmlWrites.push({ position: 'innerHTML', html: this.html }); } },
+        textContent: { get() { return (this.text || '') + this.children.map(child => child.textContent).join(''); }, set(value) { delete this.html; delete this.text; this.children.forEach(child => { child.parentElement = null; }); this.children = []; if (String(value) !== '') this.appendChild(textNode(value)); } },
+        // 不解析 HTML，但必须模拟赋值导致原子节点断开，才能检测所有权破坏。
+        innerHTML: { get() { return this.html ?? this.textContent; }, set(value) { this.children.forEach(child => { child.parentElement = null; }); this.children = []; delete this.text; this.html = String(value); this.htmlWrites.push({ position: 'innerHTML', html: this.html }); } },
+        outerHTML: { get() { return `<${this.tagName.toLowerCase()}>${this.innerHTML}</${this.tagName.toLowerCase()}>`; }, set(value) { const replacement = element(this.tagName); replacement.innerHTML = value; this.replaceWith(replacement); } },
         innerText: { get() { return this.textContent; }, set(value) { this.textContent = value; } },
+        childNodes: { get() { return this.children; } },
+        childElementCount: { get() { return this.children.filter(child => child.nodeType === 1).length; } },
+        parentNode: { get() { return this.parentElement; } },
+        nextElementSibling: { get() { return this.parentElement?.children.slice(this.parentElement.children.indexOf(this) + 1).find(child => child.nodeType === 1) || null; } },
         firstChild: { get() { return this.children[0] || null; } },
         firstElementChild: { get() { return this.children.find(child => child.nodeType === 1) || null; } },
         lastElementChild: { get() { return this.children.filter(child => child.nodeType === 1).at(-1) || null; } },
@@ -64,8 +114,8 @@ function loadUserscript(options = {}) {
     const state = { settings: new Map(Object.entries({ menu_customBlockUsers: [], ...options.settings })), observers: [], timers: new Map(), menus: new Map(), notifications: [], requests: [], errors: [], unregistered: [] };
     const root = element('html'), head = root.appendChild(element('head')), body = root.appendChild(element('body'));
     const windowListeners = new Map(), documentListeners = new Map();
-    function addListener(listeners, name, callback) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(callback); }
-    function emit(listeners, name) { for (const callback of [...(listeners.get(name) || [])]) callback({ type: name }); }
+    function addListener(listeners, name, callback, options) { if (!listeners.has(name)) listeners.set(name, new Map()); listeners.get(name).set(callback, options); }
+    function emit(listeners, name) { for (const callback of [...(listeners.get(name)?.keys() || [])]) callback({ type: name }); }
     let nextId = 1;
     const document = {
         nodeType: 9, head, body, documentElement: root, lastChild: root, lastElementChild: root, readyState: 'loading',
@@ -78,7 +128,8 @@ function loadUserscript(options = {}) {
         },
         evaluate: () => ({ singleNodeValue: null }),
         contains: target => root.contains(target),
-        addEventListener: (name, callback) => addListener(documentListeners, name, callback),
+        listeners: documentListeners,
+        addEventListener: (name, callback, options) => addListener(documentListeners, name, callback, options),
         removeEventListener: (name, callback) => documentListeners.get(name)?.delete(callback),
         ...options.document,
     };
@@ -118,6 +169,7 @@ function loadUserscript(options = {}) {
         start() { document.readyState = 'interactive'; emit(documentListeners, 'readystatechange'); },
         changeUrl(pathname) { context.location.pathname = pathname; context.location.href = 'https://www.zhihu.com' + pathname; emit(windowListeners, 'urlchange'); },
         setMenu(name, value) { state.settings.set(name, structuredClone(value)); context.registerMenuCommand(); },
+        dispatch(target, type = 'click', properties) { return dispatch(target, type, properties, document); },
         deliver(mutations) {
             for (const observer of [...state.observers]) {
                 if (!observer.active) continue;

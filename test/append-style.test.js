@@ -31,7 +31,8 @@ for (const blockVideo of [false, true]) {
         const { document, state } = harness;
         const styles = document.documentElement.children.filter(node => node.tagName === 'STYLE');
         const expectedCss = [
-            '.Question-mainColumnLogin, button.AppHeader-login {display: none !important;}',
+            '.Question-mainColumnLogin {display: none !important;}',
+            'span > a[data-za-not-track-link][href^="https://zhida.zhihu.com/search?"] {color: inherit !important;text-decoration: none !important;background: none !important;cursor: text !important;}',
             '.Topstory-container {min-height: 1500px;}'
         ];
         if (blockVideo) {

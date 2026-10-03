@@ -35,11 +35,13 @@ test('空词表启动的标题与评论监听在添加首词后过滤新内容',
     observers[0].callback([{ addedNodes: [card] }]);
     assert.equal(card.hidden, true);
     const content = element(); content.textContent = 'alpha 评论';
-    const comment = element(); comment.querySelector = selector => { assert.equal(selector, '.CommentContent'); return content; };
+    const comment = element(); comment.appendChild(content); comment.querySelector = selector => { assert.equal(selector, '.CommentContent'); return content; };
     const avatar = { parentElement: { parentElement: { parentElement: { parentElement: comment } } } };
     const wrapper = element(); wrapper.className = 'css-test'; wrapper.querySelector = selector => { assert.equal(selector, 'a[href^="https://www.zhihu.com/people/"]>img.Avatar[alt][loading]'); return avatar; };
     observers[1].callback([{ addedNodes: [wrapper] }]);
-    assert.equal(content.textContent, '[该评论已屏蔽，可点击显示]');
+    assert.equal(content.textContent, 'alpha 评论');
+    assert.equal(content.style.display, 'none');
+    assert.equal(comment.firstChild.textContent, '[该评论已屏蔽，可点击显示]');
 });
 
 test('首页、waiting 和评论均保留空白字面语义，添加选区不改写旧词表', () => {
@@ -60,14 +62,16 @@ test('首页、waiting 和评论均保留空白字面语义，添加选区不改
     assert.equal(card.hidden, false);
     harness.context.blockKeywords('comment');
     const content = element(); content.textContent = '牢 A';
-    const comment = element(); comment.querySelector = selector => { assert.equal(selector, '.CommentContent'); return content; };
+    const comment = element(); comment.appendChild(content); comment.querySelector = selector => { assert.equal(selector, '.CommentContent'); return content; };
     const avatar = { parentElement: { parentElement: { parentElement: { parentElement: comment } } } };
     const wrapper = element(); wrapper.className = 'css-test'; wrapper.querySelector = selector => { assert.equal(selector, 'a[href^="https://www.zhihu.com/people/"]>img.Avatar[alt][loading]'); return avatar; };
     harness.state.observers.at(-1).callback([{ addedNodes: [wrapper] }]);
     assert.equal(content.textContent, '牢 A');
     content.textContent = '牢   A';
     harness.state.observers.at(-1).callback([{ addedNodes: [wrapper] }]);
-    assert.equal(content.textContent, '[该评论已屏蔽，可点击显示]');
+    assert.equal(content.textContent, '牢   A');
+    assert.equal(content.style.display, 'none');
+    assert.equal(comment.firstChild.textContent, '[该评论已屏蔽，可点击显示]');
     harness.setMenu('menu_blockKeywords', false);
     title.content = 'beta';
     titleObserver.callback([{ addedNodes: [card] }]);

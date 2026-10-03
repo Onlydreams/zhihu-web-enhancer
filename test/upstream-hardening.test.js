@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { createContext } = require('../test-support/userscript-harness');
+const { createContext, element, loadUserscript } = require('../test-support/userscript-harness');
 
 function loadObserverFunction(name, overrides = {}) {
     const state = { callback: null };
@@ -21,58 +21,58 @@ function loadObserverFunction(name, overrides = {}) {
 
 test('热榜批量新增自身或子树卡片时过滤一次，忽略文本及无关变化', () => {
     let scans = 0;
-    let removed = 0;
-    const card = { querySelector: () => null, remove() { removed += 1; } };
+    let hidden = 0;
+    const card = { querySelector: () => null, style: { setProperty() {} }, set hidden(value) { if (value) hidden += 1; } };
     const { context, state } = loadObserverFunction('blockHotOther', {
         document: { querySelectorAll(selector) { scans += 1; return selector.includes(':not') ? [] : [card]; } },
     });
     context.blockHotOther();
-    scans = 0; removed = 0;
+    scans = 0; hidden = 0;
     const item = { nodeType: 1, classList: { contains: (name) => name === 'HotItem' }, querySelector: () => null };
     const wrapper = { nodeType: 1, classList: { contains: () => false }, querySelector: () => item };
     state.callback([{ addedNodes: [{ nodeType: 3 }, item, wrapper] }]);
-    assert.equal(removed, 1);
+    assert.equal(hidden, 1);
     assert.equal(scans, 2);
-    scans = 0; removed = 0;
+    scans = 0; hidden = 0;
     state.callback([{ addedNodes: [wrapper] }]);
-    assert.equal(removed, 1);
+    assert.equal(hidden, 1);
     assert.equal(scans, 2);
     scans = 0;
     state.callback([{ addedNodes: [{ nodeType: 3 }, { ...wrapper, querySelector: () => null }] }]);
     assert.equal(scans, 0);
 });
 
-test('高亮链接清理覆盖混合批次与包装节点，普通链接不变', () => {
-    let replaced = 0;
-    const link = { nodeType: 1, matches: () => true, querySelectorAll: () => [], textContent: '标题', parentElement: {}, replaceWith(text) { assert.equal(text, '标题'); replaced += 1; } };
-    const wrapper = { nodeType: 1, matches: () => false, querySelectorAll: () => [link] };
-    const { context, state } = loadObserverFunction('cleanHighlightLink');
-    context.cleanHighlightLink();
-    state.callback([{ addedNodes: [{ nodeType: 3 }, link, wrapper, { ...wrapper, querySelectorAll: () => [] }] }]);
-    assert.equal(replaced, 2);
+test('高亮链接委托覆盖动态包装节点，普通链接不变且无需观察器', () => {
+    const harness = loadUserscript();
+    harness.context.cleanHighlightLink();
+    const count = harness.state.observers.length;
+    const wrapper = harness.document.body.appendChild(element());
+    wrapper.appendChild({ nodeType: 3, textContent: '前缀' });
+    const link = wrapper.appendChild(element('a', ['span > a[data-za-not-track-link][href^="https://zhida.zhihu.com/search?"]']));
+    const ordinary = wrapper.appendChild(element('a'));
+    assert.equal(harness.dispatch(link).defaultPrevented, true);
+    assert.equal(harness.dispatch(ordinary).defaultPrevented, false);
+    assert.equal(harness.state.observers.length, count);
 });
 
 test('评论多词命中及重复通知后仍能恢复原文，缺少正文不报错', () => {
-    let html = 'alpha beta';
-    const content = {
-        dataset: {},
-        get textContent() { return html; }, set textContent(value) { html = value; },
-        get innerHTML() { return html; }, set innerHTML(value) { html = value; },
-        querySelectorAll: () => [],
-        removeAttribute() { delete this.dataset.text; },
-    };
+    const comment = element();
+    const content = comment.appendChild(element()); content.textContent = 'alpha beta';
     let currentContent = content;
     const avatar = { parentElement: { parentElement: { parentElement: { parentElement: { querySelector: () => currentContent } } } } };
     const { context, state } = loadObserverFunction('blockKeywords', {
         menu_value: (name) => name === 'menu_customBlockKeywords' ? ['alpha', 'beta'] : true,
+        document: { createElement: element, querySelectorAll: () => [] },
     });
     context.blockKeywords('comment');
     const mutations = [{ addedNodes: [{ nodeType: 1, tagName: 'DIV', className: 'css-test', dataset: {}, querySelector: () => avatar }] }];
     state.callback(mutations);
     state.callback(mutations);
-    assert.equal(content.dataset.text, 'alpha beta');
-    content.onclick({ target: content });
-    assert.equal(html, 'alpha beta');
+    assert.equal(content.style.display, 'none');
+    assert.equal(comment.querySelectorAll('button.zhihuE_BlockedComment').length, 1);
+    comment.querySelector('button.zhihuE_BlockedComment').click();
+    assert.equal(content.textContent, 'alpha beta');
+    assert.equal(content.style.display, '');
     currentContent = null;
     assert.doesNotThrow(() => state.callback(mutations));
 });
@@ -115,8 +115,9 @@ test('邀请等待在路由变化时取消', () => {
 test('邀请区及依赖节点就绪后停止等待，保留折叠与展开', () => {
     const { context, state } = loadInvitation();
     const content = { style: { display: '' } };
-    const title = { innerText: '邀请回答', insertAdjacentHTML() {} };
-    const topbar = {};
+    const topbar = element();
+    const title = topbar.appendChild(element()); title.textContent = '邀请回答';
+    context.document.createElement = element;
     let ready = false;
     context.document.querySelector = (selector) => {
         if (selector === '.QuestionInvitation-content') return content;
@@ -130,9 +131,9 @@ test('邀请区及依赖节点就绪后停止等待，保留折叠与展开', ()
     assert.deepEqual(state.cleared, [42]);
     assert.equal(state.removed, 1);
     assert.equal(content.style.display, 'none');
-    topbar.onclick();
+    title.querySelector('button.zhihuE_InvitationToggle').click();
     assert.equal(content.style.display, '');
-    topbar.onclick();
+    title.querySelector('button.zhihuE_InvitationToggle').click();
     assert.equal(content.style.display, 'none');
 });
 

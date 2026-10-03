@@ -33,8 +33,12 @@ test('首批等待超时后，直达问题和类别过滤仍处理锚点自身�
     harness.document.body.appendChild(video.card);
     const videoWrapper = element(); videoWrapper.appendChild(video2.card); harness.document.body.appendChild(videoWrapper);
     typeObserver.callback([{ addedNodes: [{ nodeType: 3 }, video.anchor, videoWrapper] }]);
-    assert.equal(video.card.parentElement, null);
-    assert.equal(video2.card.parentElement, null);
+    assert.equal(video.card.parentElement, harness.document.body);
+    assert.equal(video2.card.parentElement, videoWrapper);
+    assert.equal(video.card.hidden, true);
+    assert.equal(video2.card.hidden, true);
+    assert.equal(video.card.style.display, 'none');
+    assert.equal(video.card.style.getPropertyPriority('display'), 'important');
 });
 
 test('类别过滤忽略缺少卡片祖先的节点，同批合法搜索卡片仍被处理', () => {
@@ -50,7 +54,8 @@ test('类别过滤忽略缺少卡片祖先的节点，同批合法搜索卡片�
         const link = title.appendChild(element('a', [selector])); link.href = href;
         assert.doesNotThrow(() => observer.callback([{ target: harness.document.body, addedNodes: [{ nodeType: 3 }, orphan, title] }]));
         assert.equal(orphan.parentElement, harness.document.body);
-        assert.ok(href.includes('/zvideo/') ? card.parentElement === null : card.hidden);
+        assert.equal(card.parentElement, harness.document.body);
+        assert.equal(card.hidden, true);
         assert.equal(harness.state.errors.length, 0);
     }
 });
@@ -75,5 +80,7 @@ test('首页视频回答缺少卡片或回答祖先时保持原样，并处理�
     assert.doesNotThrow(() => observer.callback([{ target: harness.document.body, addedNodes: [orphan.title, partial.title, valid.title] }]));
     assert.equal(partial.content.parentElement, harness.document.body);
     assert.equal(card.hidden, true);
-    assert.equal(valid.content.parentElement, null);
+    assert.equal(card.style.display, 'none');
+    assert.equal(card.style.getPropertyPriority('display'), 'important');
+    assert.equal(valid.content.parentElement, card);
 });
